@@ -40,7 +40,7 @@ def train_nerf(model,
         color = estimate_color(model, sampled_points, sampled_directions)
 
         # TODO: compute loss
-        loss = mse_loss(color, images)
+        loss = mse_loss(color, gt)
 
         loss.backward()
         optimizer.step()
