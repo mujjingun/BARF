@@ -12,6 +12,8 @@ def main():
     parser.add_argument('--testskip', type=int, default=1)
     parser.add_argument('--n_steps', type=int, default=100)
     parser.add_argument('--weight_decay', type=float, default=1e-4)
+    parser.add_argument('--num_rays', type=int, default=1024)
+    parser.add_argument('--num_points', type=int, default=256)
 
     args = parser.parse_args()
 
