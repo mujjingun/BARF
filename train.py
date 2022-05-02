@@ -13,7 +13,7 @@ def train_nerf(model,
         model.parameters(),
         5e-4, args.weight_decay
     )
-
+    
     for step in range(args.n_steps):
         optimizer.zero_grad()
 
@@ -34,11 +34,11 @@ def train_nerf(model,
         gt = gt_flatten[selected_pixel_idx]
 
 
-        sampled_points, sampled_directions = sample_points(
+        sampled_points, sampled_directions, lin = sample_points(
             selected_d, world_o, args.num_points
         )
 
-        color = estimate_color(model, sampled_points, sampled_directions)
+        color = estimate_color(model, sampled_points, sampled_directions, lin)
 
         # TODO: compute loss
         loss = mse_loss(color, gt)

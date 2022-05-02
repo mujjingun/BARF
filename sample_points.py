@@ -37,6 +37,7 @@ def get_rays(hwf,c2w):
     #     for w in range(W):
     #         world_d[h,w] = c2w[:3,:3]@camera_d[h,w]
     world_d = torch.sum(camera_d[:,:, np.newaxis, :] * c2w[:3,:3], -1)
+    world_o = torch.squeeze(world_o)
 
     return world_o,world_d
 
@@ -49,18 +50,21 @@ def sample_points(world_o,world_d,num_point,near=2.,far=6.):
         far       : far of view frustum / float
         num_point : number of sample point of each ray / int
     output:
-        sampled points : numpy array with size (num_ray,num_point,3)
+        points : sampled points / torch Tensor with size (num_ray,num_point,3)
+        world_d : camera direction / torch Tensor with size (num_ray, 3)
+        lin : z value in camera coordinate of each points / torch Tensor with size (num_ray, 1)
     """
     num_ray = world_d.shape[0]
-    lin = torch.linspace(near,far,num_point) # (num_point,)
+
+    lin = torch.linspace(near,far,num_point+1)[:-1] # (num_point,)
     interv = (far-near)/num_point
     rand = torch.rand((num_ray,num_point,1))*interv
     lin = torch.unsqueeze(lin.expand(num_ray,num_point),-1)
-    lin = lin+rand
+    lin = lin+rand # z value of camera space / each direction vector is transformed from (x,y,1) in camera space
 
-    print(world_d.shape)
     world_d_expand = (world_d.expand((num_point,num_ray,3))).transpose(0,1)
     world_o_expand = world_o.expand(world_d_expand.shape)
     points = world_o_expand+world_d_expand*lin
 
-    return points, world_d
+
+    return points, world_d, lin
