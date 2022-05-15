@@ -52,8 +52,7 @@ def estimate_color(model, sampled_points, sampled_directions, lin, pos_encoder, 
     # ``transparency''
     delta = torch.unsqueeze(delta,-1)
 
-    
-    T = torch.exp(-density * delta)
+    T = torch.exp(-density * delta).sum(dim=1, keepdim=True)
 
     # integrated pixel color
     color = torch.sum(T * (1 - torch.exp(-density * delta)) * color, dim=1)
