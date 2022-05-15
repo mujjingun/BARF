@@ -9,7 +9,8 @@ class NeRFModel(nn.Module):
         self.in_view_dim = in_view_dim
         self.skip_connection = skip_connection
 
-        self.linears_before = nn.ModuleList([nn.Linear(in_dim,256)]+[nn.Linear(256,256) if i not in skip_connection else nn.Linear(256+self.in_dim,256) for i in range(self.depth-1)])
+        self.linear_in = nn.Linear(in_dim,256)
+        self.linears_before = nn.ModuleList([nn.Linear(256,256) if i not in skip_connection else nn.Linear(256+self.in_dim,256) for i in range(self.depth-1)])
 
         self.linear_density = nn.Linear(256,1)
         self.linear_color = nn.ModuleList([nn.Linear(256,256), nn.Linear(256+self.in_view_dim,128), nn.Linear(128,3)])
@@ -18,15 +19,16 @@ class NeRFModel(nn.Module):
 
         input_pos = location
         input_dir = direction
-        feature = location
+        feature = nn.ReLU()(self.linear_in(location))
         for i in range(len(self.linears_before)):
             layer = self.linears_before[i]
             feature = layer(feature) if i not in self.skip_connection else layer(torch.cat([input_pos,feature],-1))
+            feature = nn.ReLU()(feature)
 
-        density = self.linear(self.linear_density(feature))
+        density = self.linear_density(feature)
 
-        feature = self.linear_color[0](feature)
-        feature = self.linear_color[1](torch.cat([feature,input_dir],-1))
+        feature = nn.ReLU()(self.linear_color[0](feature))
+        feature = nn.ReLU()(self.linear_color[1](torch.cat([feature,input_dir],-1)))
         color = self.linear_color[2](feature)
 
         return density, color
@@ -47,7 +49,7 @@ class PosEncoding:
             self.pe_fn.append(lambda x: torch.cos(2**i*x))
             self.pe_fn.append(lambda x: torch.sin(2**i*x))
 
-    def encode_dim(self):
+    def ret_encode_dim(self):
         return self.encode_dim
 
     def encode(self,inputs,epoch):

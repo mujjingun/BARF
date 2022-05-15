@@ -43,6 +43,8 @@ def load_dataset(dataset_type, basedir, half_res=False, testskip=1):
         H, W = images[0].width, images[0].height
         focal_length = .5 * W / np.tan(.5 * camera_angle_x)
 
+    poses = np.stack(poses,0)
+
     hwf = [H, W, focal_length]
 
     render_poses = np.stack([
