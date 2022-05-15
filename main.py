@@ -1,6 +1,6 @@
 import argparse
 import loader
-from model import NeRFModel
+from model import NeRFModel, PosEncoding
 from train import train_nerf
 import torch
 import os
@@ -28,18 +28,17 @@ def main():
     images, poses, render_poses, hwf, i_split = loader.load_dataset(
         args.dataset_type, args.basedir, args.half_res, args.testskip
     )
-
     
     pos_encoder = PosEncoding(3,L=args.pos_enc_L,upper_bound=args.n_steps/20)
     dir_encoder = PosEncoding(3,L=args.pos_enc_L,upper_bound=args.n_steps/20)
 
-    in_dim = pos_encoder.encode_dim()
-    in_view_dim = dir_encoder.encode_dim()
+    in_dim = pos_encoder.encode_dim
+    in_view_dim = dir_encoder.encode_dim
     
     model = NeRFModel(in_dim=in_dim, in_view_dim=in_view_dim).to(device)
 
-    pos_encoder.to(device)
-    dir_encoder.to(device)
+    #pos_encoder.to(device)
+    #dir_encoder.to(device)
 
     train_nerf(
         model, pos_encoder, dir_encoder,
@@ -49,3 +48,6 @@ def main():
 
     # TODO: evaluate trained model
 
+
+if __name__ == "__main__":
+    main()

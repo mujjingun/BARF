@@ -1,5 +1,5 @@
 import torch
-from sample_points import sample_points
+from sample_points import sample_points, get_rays
 from estimate_color import estimate_color
 import numpy as np
 from tqdm import tqdm, trange
@@ -10,9 +10,11 @@ def train_nerf(model, pos_encoder, dir_encoder,
                images, poses, render_poses, hwf, i_split, device,
                args):
 
+    poses = torch.nn.Parameter(torch.tensor(poses))
+
     optimizer = torch.optim.Adam(
-        model.parameters(),
-        5e-4, args.weight_decay
+        [*model.parameters(), poses],
+        lr=5e-4, weight_decay=args.weight_decay
     )
 
     pbar = tqdm(range(args.n_steps))

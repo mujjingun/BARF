@@ -47,9 +47,6 @@ class PosEncoding:
             self.pe_fn.append(lambda x: torch.cos(2**i*x))
             self.pe_fn.append(lambda x: torch.sin(2**i*x))
 
-    def encode_dim(self):
-        return self.encode_dim
-
     def encode(self,inputs,epoch):
         if (epoch == -1) or (epoch > self.upper_bound): # not use corase-to-fine positional encoding
             return torch.cat([fn(inputs) for fn in self.pe_fn], -1)
