@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 
 
-def estimate_color(model, sampled_points, sampled_directions, lin):
+def estimate_color(model, sampled_points, sampled_directions, lin, pos_encoder, dir_encoder):
     """
     estimate color based on the NeRF model and the sampled points
     :param model: NeRFModel
@@ -12,6 +12,8 @@ def estimate_color(model, sampled_points, sampled_directions, lin):
              density has shape [num_rays, num_point, 1]
              color has shape [num_rays, 3]
     """
+    torch.set_default_tensor_type('torch.cuda.FloatTensor')
+
     num_rays, num_point, _ = sampled_points.shape
 
     # diff = torch.cat([
@@ -30,21 +32,33 @@ def estimate_color(model, sampled_points, sampled_directions, lin):
     delta = z_diff * d_norm
 
     del z_diff
+    
+    sampled_directions_normalize = sampled_directions/d_norm
+    
     del d_norm
 
-    sampled_directions_normalize = sampled_directions/d_norm
+    
+    sampled_directions_normalize = sampled_directions_normalize.unsqueeze(1).expand_as(sampled_points).reshape(-1, 3)
+    sampled_points = sampled_points.reshape(-1, 3)
+
     density, color = model(
-        sampled_points.reshape(-1, 3),
-        sampled_directions_normalize.unsqueeze(1).expand_as(sampled_points).reshape(-1, 3)
+        pos_encoder.encode(sampled_points,-1).type(torch.float32),
+        dir_encoder.encode(sampled_directions_normalize,-1).type(torch.float32)
     )
+
     density = density.reshape(num_rays, num_point, 1)  # density: [num_rays, num_point, 1]
     color = color.reshape(num_rays, num_point, 3)  # color: [num_rays, num_point, 3]
 
-
     # ``transparency''
+    delta = torch.unsqueeze(delta,-1)
+
+    input(density)
+    input(delta)
+    input(color)
     T = torch.exp(-density * delta)
 
+    input(T)
     # integrated pixel color
     color = torch.sum(T * (1 - torch.exp(-density * delta)) * color, dim=1)
 
-    return density, color
+    return color
