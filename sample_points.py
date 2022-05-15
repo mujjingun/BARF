@@ -20,7 +20,7 @@ def get_rays(hwf,c2w):
     torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
     c2w = torch.squeeze(c2w)
-    print(c2w.get_device())
+    # print(c2w.get_device())
 
     H, W, f = hwf
     u, v = torch.meshgrid(torch.arange(H), torch.arange(W))
