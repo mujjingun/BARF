@@ -20,6 +20,8 @@ def main():
     parser.add_argument('--weight_decay', type=float, default=1e-4)
     parser.add_argument('--num_rays', type=int, default=1024)
     parser.add_argument('--num_points', type=int, default=256)
+    parser.add_argument('--pos_enc_L', type=int, default=10)
+    parser.add_argument('--dir_enc_L', type=int, default=4)
 
     args = parser.parse_args()
 
@@ -27,10 +29,20 @@ def main():
         args.dataset_type, args.basedir, args.half_res, args.testskip
     )
 
-    model = NeRFModel().to(device)
+    
+    pos_encoder = PosEncoding(3,L=args.pos_enc_L,upper_bound=args.n_steps/20)
+    dir_encoder = PosEncoding(3,L=args.pos_enc_L,upper_bound=args.n_steps/20)
+
+    in_dim = pos_encoder.encode_dim()
+    in_view_dim = dir_encoder.encode_dim()
+    
+    model = NeRFModel(in_dim=in_dim, in_view_dim=in_view_dim).to(device)
+
+    pos_encoder.to(device)
+    dir_encoder.to(device)
 
     train_nerf(
-        model,
+        model, pos_encoder, dir_encoder,
         images, poses, render_poses, hwf, i_split, device,
         args
     )
