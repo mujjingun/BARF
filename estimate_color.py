@@ -27,7 +27,7 @@ def estimate_color(model, sampled_points, sampled_directions, lin, pos_encoder, 
     ####
     lin = torch.squeeze(lin) # num_rays, num_point
     z_diff = lin[:,1:] - lin[:,:-1] # num_rays, num_point-1
-    z_diff = torch.cat([z_diff, 1e9*torch.ones((z_diff.shape[0],1))],-1) #num_rays, num_point
+    z_diff = torch.cat([z_diff, 1e2*torch.ones((z_diff.shape[0],1))],-1) #num_rays, num_point
     d_norm = torch.norm(sampled_directions,p=2,dim=1, keepdim=True) #num_rays, 1
     delta = z_diff * d_norm
 
@@ -52,12 +52,9 @@ def estimate_color(model, sampled_points, sampled_directions, lin, pos_encoder, 
     # ``transparency''
     delta = torch.unsqueeze(delta,-1)
 
-    input(density)
-    input(delta)
-    input(color)
+    
     T = torch.exp(-density * delta)
 
-    input(T)
     # integrated pixel color
     color = torch.sum(T * (1 - torch.exp(-density * delta)) * color, dim=1)
 
