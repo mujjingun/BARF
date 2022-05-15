@@ -2,7 +2,13 @@ import argparse
 import loader
 from model import NeRFModel
 from train import train_nerf
+import torch
+import os
+import numpy as np
 
+os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+np.random.seed(0)
 
 def main():
     parser = argparse.ArgumentParser('BARF')
@@ -21,11 +27,11 @@ def main():
         args.dataset_type, args.basedir, args.half_res, args.testskip
     )
 
-    model = NeRFModel()
+    model = NeRFModel().to(device)
 
     train_nerf(
         model,
-        images, poses, render_poses, hwf, i_split,
+        images, poses, render_poses, hwf, i_split, device,
         args
     )
 

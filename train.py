@@ -6,14 +6,14 @@ import numpy as np
 mse_loss = lambda output, gt : torch.mean((output-gt)**2)
 
 def train_nerf(model,
-               images, poses, render_poses, hwf, i_split,
+               images, poses, render_poses, hwf, i_split, device,
                args):
 
     optimizer = torch.optim.Adam(
         model.parameters(),
         5e-4, args.weight_decay
     )
-    
+
     for step in range(args.n_steps):
         optimizer.zero_grad()
 
