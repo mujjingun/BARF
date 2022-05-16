@@ -165,9 +165,9 @@ def train_nerf(model, pos_encoder, dir_encoder,
 
         step_frac = step / args.n_steps
         optimizer.param_groups[0]['lr'] = math.exp(
-            math.log(lr_p_start) + (math.log(lr_p_end) - math.log(lr_p_start)) * step_frac)
-        optimizer.param_groups[1]['lr'] = math.exp(
             math.log(lr_f_start) + (math.log(lr_f_end) - math.log(lr_f_start)) * step_frac)
+        optimizer.param_groups[1]['lr'] = math.exp(
+            math.log(lr_p_start) + (math.log(lr_p_end) - math.log(lr_p_start)) * step_frac)
 
         #sanity check and save model
         if (step%1000 == 0) and (step != 0) :
