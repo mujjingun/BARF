@@ -17,7 +17,6 @@ def main():
     parser.add_argument('--half_res', default=False, action='store_true')
     parser.add_argument('--testskip', type=int, default=1)
     parser.add_argument('--n_steps', type=int, default=200000)
-    parser.add_argument('--weight_decay', type=float, default=1e-4)
     parser.add_argument('--num_rays', type=int, default=1024)
     parser.add_argument('--num_points', type=int, default=256)
     parser.add_argument('--pos_enc_L', type=int, default=10)

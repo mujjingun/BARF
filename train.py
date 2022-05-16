@@ -98,7 +98,6 @@ def train_nerf(model, pos_encoder, dir_encoder,
             {'params': [pose_params], 'lr': lr_p_start},
         ],
         betas=(0.9, 0.999),
-        weight_decay=args.weight_decay
     )
 
     loss_running_avg = None
