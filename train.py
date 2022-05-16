@@ -90,10 +90,12 @@ def train_nerf(model, pos_encoder, dir_encoder,
 
     pose_distance(poses, pose_params)
 
+    lr_f_start, lr_f_end = 5e-4, 1e-4
+    lr_p_start, lr_p_end = 1e-3, 1e-5
     optimizer = torch.optim.Adam(
         params=[
-            {'params': model.parameters(), 'lr': 1e-3},
-            {'params': [pose_params], 'lr': 3e-3},
+            {'params': model.parameters(), 'lr': lr_f_start},
+            {'params': [pose_params], 'lr': lr_p_start},
         ],
         betas=(0.9, 0.999),
         weight_decay=args.weight_decay
@@ -155,16 +157,17 @@ def train_nerf(model, pos_encoder, dir_encoder,
             loss_running_avg = loss
         else:
             loss_running_avg = 0.99 * loss_running_avg + 0.01 * loss
-        pbar.set_description(f"loss : {loss:06f} | {loss*1000:02f} ({loss_running_avg*1000:02f})")
+        pbar.set_description(f"loss : {loss:06f} | {loss*1000:02f} ({loss_running_avg*1000:02f}) "
+                             f"lr_f={optimizer.param_groups[0]['lr']} lr_p={optimizer.param_groups[1]['lr']}")
 
         loss.backward()
         optimizer.step()
 
         step_frac = step / args.n_steps
-        optimizer.param_groups[0]['lr'] = 1e-3 + (1e-4 - 1e-3) * step_frac
-        optimizer.param_groups[1]['lr'] = 3e-3 + (1e-5 - 3e-3) * step_frac
-
-
+        optimizer.param_groups[0]['lr'] = math.exp(
+            math.log(lr_p_start) + (math.log(lr_p_end) - math.log(lr_p_start)) * step_frac)
+        optimizer.param_groups[1]['lr'] = math.exp(
+            math.log(lr_f_start) + (math.log(lr_f_end) - math.log(lr_f_start)) * step_frac)
 
         #sanity check and save model
         if (step%1000 == 0) and (step != 0) :
