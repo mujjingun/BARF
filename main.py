@@ -43,13 +43,16 @@ def main():
     # pos_encoder.to(device)
     # dir_encoder.to(device)
 
-    train_nerf(
+    pose_params = train_nerf(
         model, pos_encoder, dir_encoder,
         images, poses, render_poses, hwf, i_split, device,
         args
     )
 
     # TODO: evaluate trained model
+
+    torch.save(model.state_dict(), "model.pth")
+    torch.save(pose_params, "pose.pth")
 
 
 if __name__ == "__main__":

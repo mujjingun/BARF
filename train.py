@@ -145,3 +145,5 @@ def train_nerf(model, pos_encoder, dir_encoder,
         step_frac = step / args.n_steps
         optimizer.param_groups[0]['lr'] = 1e-3 + (1e-4 - 1e-3) * step_frac
         optimizer.param_groups[1]['lr'] = 3e-3 + (1e-5 - 3e-3) * step_frac
+
+    return pose_params
