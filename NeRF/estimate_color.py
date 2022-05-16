@@ -54,9 +54,17 @@ def estimate_color(model, sampled_points, sampled_directions, lin, pos_encoder, 
 
     tmp = density * delta
     tmp = torch.cumsum(tmp, dim=1) - tmp[:, 0].unsqueeze(1)
+
     T = torch.exp(-tmp)
+    # print(torch.squeeze(T[0]))
+    # T = torch.exp(-density * delta)
 
     # integrated pixel color
+    # print(T.shape)
+    # print(color.shape)
+    # print(density.shape)
+    # print(delta.shape)
     color = torch.sum(T * (1 - torch.exp(-density * delta)) * color, dim=1)
-
+    # print(color.shape)
+    # input(torch.squeeze(color[0]))
     return color
