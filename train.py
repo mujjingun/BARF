@@ -5,6 +5,7 @@ from estimate_color import estimate_color
 import numpy as np
 from tqdm import tqdm, trange
 import os
+from skimage import io
 
 mse_loss = lambda output, gt : torch.mean((output-gt)**2)
 
@@ -59,6 +60,18 @@ def rotationMatrixToEulerAngles(R):
     return torch.stack([x, y, z], dim=1)
 
 
+def pose_distance(orig_poses, pose_params):
+    translation = pose_params[:, :3]
+    angles = pose_params[:, 3:]
+    rotation_mat = eulerAnglesToRotationMatrix(angles)
+    c2w = rotation_mat.new_zeros(translation.shape[0], 4, 4)
+    c2w[:, :3, :3] = rotation_mat
+    c2w[:, :3, 3] = translation
+    c2w[:, 3, 3] = 1.0
+    mse = ((orig_poses.flatten() - c2w.flatten())**2).mean()
+    print(f"{mse:06f}")
+
+
 def train_nerf(model, pos_encoder, dir_encoder,
                images, poses, render_poses, hwf, i_split, device,
                args):
@@ -69,10 +82,13 @@ def train_nerf(model, pos_encoder, dir_encoder,
     angles = rotationMatrixToEulerAngles(U)
 
     # add perturbations on the camera pose
-    translation += torch.randn_like(translation) * 0.26
-    angles += torch.randn_like(angles) * math.radians(14.9)
+    if args.add_perturb:
+        translation += torch.randn_like(translation) * 0.26
+        angles += torch.randn_like(angles) * math.radians(14.9)
 
     pose_params = torch.nn.Parameter(torch.cat([translation, angles], dim=1))
+
+    pose_distance(poses, pose_params)
 
     optimizer = torch.optim.Adam(
         params=[
@@ -130,7 +146,8 @@ def train_nerf(model, pos_encoder, dir_encoder,
         # sampled_points = pos_encoder.encode(sampled_points,step)
         # sampled_directions = dir_encoder.encode(sampled_directions,step)
 
-        color = estimate_color(model, sampled_points, sampled_directions, lin, pos_encoder, dir_encoder)
+        color = estimate_color(model, sampled_points, sampled_directions, lin, pos_encoder, dir_encoder,
+                               step if args.coarse_to_fine else -1)
 
         # TODO: compute loss
         loss = mse_loss(color, gt)
@@ -147,8 +164,12 @@ def train_nerf(model, pos_encoder, dir_encoder,
         optimizer.param_groups[0]['lr'] = 1e-3 + (1e-4 - 1e-3) * step_frac
         optimizer.param_groups[1]['lr'] = 3e-3 + (1e-5 - 3e-3) * step_frac
 
+
+
         #sanity check and save model
         if (step%1000 == 0) and (step != 0) :
+            pose_distance(poses, pose_params)
+
             world_o, world_d = get_rays(hwf,c2w)
             world_d_flatten = world_d.reshape(-1,3)
 
@@ -160,14 +181,15 @@ def train_nerf(model, pos_encoder, dir_encoder,
 
             colors = []
             total_pixel = hwf[0]*hwf[1]
-            batch_size = 8000
+            batch_size = 4000
             iter = total_pixel//batch_size
             with torch.no_grad():
                 for j in trange(iter):
                     batch_points = sampled_points[batch_size*j:batch_size*(j+1)]
                     batch_directions = sampled_directions[batch_size*j:batch_size*(j+1)]
                     batch_lin = lin[batch_size*j:batch_size*(j+1)]
-                    color = estimate_color(model, batch_points, batch_directions, batch_lin, pos_encoder, dir_encoder)
+                    color = estimate_color(model, batch_points, batch_directions, batch_lin, pos_encoder, dir_encoder,
+                                           step if args.coarse_to_fine else -1)
                     colors.append(color)
 
             color = torch.cat(colors,0)

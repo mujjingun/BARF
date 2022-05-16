@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 
 
-def estimate_color(model, sampled_points, sampled_directions, lin, pos_encoder, dir_encoder):
+def estimate_color(model, sampled_points, sampled_directions, lin, pos_encoder, dir_encoder, step):
     """
     estimate color based on the NeRF model and the sampled points
     :param model: NeRFModel
@@ -42,8 +42,8 @@ def estimate_color(model, sampled_points, sampled_directions, lin, pos_encoder, 
     sampled_points = sampled_points.reshape(-1, 3)
 
     density, color = model(
-        pos_encoder.encode(sampled_points,-1).type(torch.float32),
-        dir_encoder.encode(sampled_directions_normalize,-1).type(torch.float32)
+        pos_encoder.encode(sampled_points, step).type(torch.float32),
+        dir_encoder.encode(sampled_directions_normalize, step).type(torch.float32)
     )
 
     density = density.reshape(num_rays, num_point, 1)  # density: [num_rays, num_point, 1]

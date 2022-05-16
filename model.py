@@ -37,11 +37,12 @@ class NeRFModel(nn.Module):
 
 
 class PosEncoding:
-    def __init__(self,in_dim,L=0,upper_bound=2000):
+    def __init__(self,in_dim,L=0,lower_bound=20000,upper_bound=100000):
         self.in_dim = in_dim
         self.L = L
         self.encode_dim = (2*L+1)*in_dim
         self.pe_fn = []
+        self.lower_bound = lower_bound
         self.upper_bound = upper_bound
 
         self.pe_fn.append(lambda x:x)
@@ -58,7 +59,7 @@ class PosEncoding:
         if (epoch == -1) or (epoch > self.upper_bound): # not use corase-to-fine positional encoding
             return torch.cat([fn(inputs) for fn in self.pe_fn], -1)
         else: # use coarse-to-fine positional encoding
-            ratio = epoch/self.upper_bound
+            ratio = min(max((epoch-self.lower_bound)/(self.upper_bound - self.lower_bound), 0), 1)
             alpha = ratio*self.L
             ll = [self.pe_fn[0](inputs)]
             for i in range(self.L):
@@ -71,8 +72,8 @@ class PosEncoding:
                     ll.append(torch.zeros_like(inputs))
                     ll.append(torch.zeros_like(inputs))
                 else:
-                    ll.append(((1-torch.cos(torch.Tensor([alpha-k])))/2)*cos_fn(inputs))
-                    ll.append(((1-torch.cos(torch.Tensor([alpha-k])))/2)*sin_fn(inputs))
+                    ll.append(((1-torch.cos(torch.Tensor([alpha-i])))/2)*cos_fn(inputs))
+                    ll.append(((1-torch.cos(torch.Tensor([alpha-i])))/2)*sin_fn(inputs))
             return torch.cat(ll, -1)
 
         

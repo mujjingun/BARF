@@ -23,6 +23,10 @@ def main():
     parser.add_argument('--pos_enc_L', type=int, default=10)
     parser.add_argument('--dir_enc_L', type=int, default=4)
     parser.add_argument('--basedir', type=str, default='test_result')
+    parser.add_argument('--add_perturb', default=False, action='store_true')
+    parser.add_argument('-c2f', '--coarse_to_fine', default=False, action='store_true')
+    parser.add_argument('--c2f_begin', type=int, default=20000)
+    parser.add_argument('--c2f_end', type=int, default=100000)
 
     args = parser.parse_args()
 
@@ -35,8 +39,8 @@ def main():
     if images.shape[-1] == 4:
         images = images[...,:3]
 
-    pos_encoder = PosEncoding(3,L=args.pos_enc_L,upper_bound=args.n_steps/20)
-    dir_encoder = PosEncoding(3,L=args.dir_enc_L,upper_bound=args.n_steps/20)
+    pos_encoder = PosEncoding(3,L=args.pos_enc_L,lower_bound=args.c2f_begin,upper_bound=args.c2f_end)
+    dir_encoder = PosEncoding(3,L=args.dir_enc_L,lower_bound=args.c2f_begin,upper_bound=args.c2f_end)
 
     in_dim = pos_encoder.ret_encode_dim()
     in_view_dim = dir_encoder.ret_encode_dim()
