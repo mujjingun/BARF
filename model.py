@@ -45,12 +45,11 @@ class PosEncoding:
         self.lower_bound = lower_bound
         self.upper_bound = upper_bound
 
-        self.pe_fn.append(lambda x:x)
-
+        self.pe_fn.append(lambda x: x)
 
         for i in range(L):
-            self.pe_fn.append(lambda x: torch.cos(2**i*x))
-            self.pe_fn.append(lambda x: torch.sin(2**i*x))
+            self.pe_fn.append(lambda x, freq=i: torch.cos((2**freq)*x))
+            self.pe_fn.append(lambda x, freq=i: torch.sin((2**freq)*x))
 
     def ret_encode_dim(self):
         return self.encode_dim
