@@ -2,7 +2,7 @@ import numpy as np
 import torch
 
 
-def get_rays(hwf,c2w):
+def get_rays(hwf,c2w,K=None):
     """
     input:
         H : height of image
@@ -20,7 +20,6 @@ def get_rays(hwf,c2w):
     torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
     c2w = torch.squeeze(c2w)
-    # print(c2w.get_device())
 
     H, W, f = hwf
     u, v = torch.meshgrid(torch.arange(H), torch.arange(W))
@@ -29,20 +28,24 @@ def get_rays(hwf,c2w):
     x = v-(W-1)/2
     fx = f
     fy = f
+    if K is not None:
+        fx = K[0][0]
+        fy = K[1][1]
     x = x/fx
     y = y/fy
 
+    
     # o = (torch.Tensor([0,0,0,1])).type(torch.float64)
     o = torch.Tensor([0,0,0,1])
     
     world_o = c2w@torch.unsqueeze(o,-1)
     world_o = world_o[:3]
-
     camera_d = torch.stack([x,-y,-torch.ones_like(x)],-1)
     # world_d = np.zeros((H,W,3))
     # for h in range(H):
     #     for w in range(W):
     #         world_d[h,w] = c2w[:3,:3]@camera_d[h,w]
+    # world_d = torch.sum(camera_d[:,:, np.newaxis, :] * c2w[:3,:3], -1)
     world_d = torch.squeeze(torch.matmul(c2w[:3,:3],camera_d.unsqueeze(-1)))
     world_o = torch.squeeze(world_o)
 

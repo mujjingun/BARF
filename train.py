@@ -4,6 +4,7 @@ from sample_points import *
 from estimate_color import estimate_color
 import numpy as np
 from tqdm import tqdm, trange
+import os
 
 mse_loss = lambda output, gt : torch.mean((output-gt)**2)
 
@@ -145,3 +146,40 @@ def train_nerf(model, pos_encoder, dir_encoder,
         step_frac = step / args.n_steps
         optimizer.param_groups[0]['lr'] = 1e-3 + (1e-4 - 1e-3) * step_frac
         optimizer.param_groups[1]['lr'] = 3e-3 + (1e-5 - 3e-3) * step_frac
+
+
+        #sanity check and save model
+        if (step%1000 == 0) and (step != 0) :
+            world_o, world_d = get_rays(hwf,c2w)
+            world_d_flatten = world_d.reshape(-1,3)
+
+            selected_d = world_d_flatten
+
+            sampled_points, sampled_directions, lin = sample_points(
+                world_o, selected_d, args.num_points, device
+            )
+
+            colors = []
+            total_pixel = hwf[0]*hwf[1]
+            batch_size = 8000
+            iter = total_pixel//batch_size
+            with torch.no_grad():
+                for j in trange(iter):
+                    batch_points = sampled_points[batch_size*j:batch_size*(j+1)]
+                    batch_directions = sampled_directions[batch_size*j:batch_size*(j+1)]
+                    batch_lin = lin[batch_size*j:batch_size*(j+1)]
+                    color = estimate_color(model, batch_points, batch_directions, batch_lin, pos_encoder, dir_encoder)
+                    colors.append(color)
+
+            color = torch.cat(colors,0)
+
+            color = color.reshape(hwf[0],hwf[1],3)
+            
+            os.makedirs(f"{args.basedir}/img",exist_ok=True)
+            os.makedirs(f"{args.basedir}/ckpt",exist_ok=True)
+            io.imsave(f"{args.basedir}/img/{step}.png",color.cpu().numpy())
+            torch.save({
+                    'step': step,
+                    'model_state_dict' : model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                }, f"{args.basedir}/ckpt/{step}.tar")
