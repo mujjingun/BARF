@@ -60,7 +60,12 @@ def rotationMatrixToEulerAngles(R):
     return torch.stack([x, y, z], dim=1)
 
 
-def pose_distance(orig_poses, pose_params):
+def pose_distance(perturbs):
+    mat = to_matrix(perturbs)
+    print(f"{(mat**2).mean():06f}")
+
+
+def to_matrix(pose_params):
     translation = pose_params[:, :3]
     angles = pose_params[:, 3:]
     rotation_mat = eulerAnglesToRotationMatrix(angles)
@@ -68,34 +73,30 @@ def pose_distance(orig_poses, pose_params):
     c2w[:, :3, :3] = rotation_mat
     c2w[:, :3, 3] = translation
     c2w[:, 3, 3] = 1.0
-    mse = ((orig_poses.flatten() - c2w.flatten())**2).mean()
-    print(f"{mse:06f}")
+    return c2w.float()
 
 
 def train_nerf(model, pos_encoder, dir_encoder,
                images, poses, render_poses, hwf, i_split, device,
                args):
 
-    poses = torch.tensor(poses, device=device)
-    translation = poses[:, :3, 3]
-    U = poses[:, :3, :3]
-    angles = rotationMatrixToEulerAngles(U)
+    poses = torch.tensor(poses, dtype=torch.float32, device=device)
 
     # add perturbations on the camera pose
-    if args.add_perturb:
-        translation += torch.randn_like(translation) * 0.26
-        angles += torch.randn_like(angles) * math.radians(14.9)
-
-    pose_params = torch.nn.Parameter(torch.cat([translation, angles], dim=1))
-
-    pose_distance(poses, pose_params)
+    pose_perturbs = torch.nn.Parameter(
+        torch.cat([
+            torch.randn((poses.shape[0], 3), device=device) * 0.26,
+            torch.randn((poses.shape[0], 3), device=device) * math.radians(14.9),
+        ], dim=1)
+    )
+    pose_distance(pose_perturbs)
 
     lr_f_start, lr_f_end = 5e-4, 1e-4
     lr_p_start, lr_p_end = 1e-3, 1e-5
     optimizer = torch.optim.Adam(
         params=[
             {'params': model.parameters(), 'lr': lr_f_start},
-            {'params': [pose_params], 'lr': lr_p_start},
+            {'params': [pose_perturbs], 'lr': lr_p_start},
         ],
         betas=(0.9, 0.999),
     )
@@ -110,19 +111,12 @@ def train_nerf(model, pos_encoder, dir_encoder,
         i_train = i_split[0]
         train_idx = np.random.choice(i_train, 1)
 
-        train_im = images[train_idx] # H x W x 3
+        train_im = images[train_idx]  # H x W x 3
 
-        translation = pose_params[train_idx, :3]
-        angles = pose_params[train_idx, 3:]
-        rotation_mat = eulerAnglesToRotationMatrix(angles)
-        c2w = rotation_mat.new_zeros(1, 4, 4)
-        c2w[0, :3, :3] = rotation_mat
-        c2w[0, :3, 3] = translation
-        c2w[0, 3, 3] = 1.0
-
+        c2w = to_matrix(pose_perturbs[train_idx]) @ poses[train_idx]
         c2w = c2w.type(torch.float32)
 
-        world_o, world_d = get_rays(hwf,c2w) # world_o : (3), world_d (H x W x 3)
+        world_o, world_d = get_rays(hwf, c2w)  # world_o : (3), world_d (H x W x 3)
 
         world_o = world_o.to(device)
         world_d = world_d.to(device)
@@ -170,7 +164,7 @@ def train_nerf(model, pos_encoder, dir_encoder,
 
         #sanity check and save model
         if (step%1000 == 0) and (step != 0) :
-            pose_distance(poses, pose_params)
+            pose_distance(pose_perturbs)
 
             world_o, world_d = get_rays(hwf,c2w)
             world_d_flatten = world_d.reshape(-1,3)
@@ -205,5 +199,5 @@ def train_nerf(model, pos_encoder, dir_encoder,
                     'step': step,
                     'model_state_dict' : model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
-                    'pose': pose_params
+                    'pose': pose_perturbs
                 }, f"{args.basedir}/ckpt/{step}.tar")
