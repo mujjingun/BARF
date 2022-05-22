@@ -4,6 +4,8 @@ from estimate_color import estimate_color
 import numpy as np
 from tqdm import tqdm, trange
 import imageio as io
+import math
+import os
 
 mse_loss = lambda output, gt : torch.mean((output-gt)**2)
 
@@ -14,9 +16,10 @@ def train_nerf(model, pos_encoder, dir_encoder,
     optimizer = torch.optim.Adam(
         params=model.parameters(),
         lr=5e-4,
-        betas=(0.9,0.999),
-        weight_decay=args.weight_decay
+        betas=(0.9,0.999)
     )
+
+    lr_f_start, lr_f_end = 5e-4, 5e-5
 
     pbar = tqdm(range(args.n_steps))
     for step in pbar:
@@ -62,6 +65,11 @@ def train_nerf(model, pos_encoder, dir_encoder,
         loss.backward()
         optimizer.step()
 
+        step_frac = step / args.n_steps
+
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = math.exp(
+            math.log(lr_f_start) + (math.log(lr_f_end) - math.log(lr_f_start)) * step_frac)
 
         if (step%1000 == 0) and (step != 0) :
             world_o, world_d = get_rays(hwf,c2w)
@@ -88,9 +96,11 @@ def train_nerf(model, pos_encoder, dir_encoder,
             color = torch.cat(colors,0)
 
             color = color.reshape(hwf[0],hwf[1],3)
-            io.imsave(f"../test_result/img/{step}.png",color.cpu().numpy())
+            os.makedirs(f"{args.basedir}/img",exist_ok=True)
+            os.makedirs(f"{args.basedir}/ckpt",exist_ok=True)
+            io.imsave(f"{args.basedir}/img/{step}.png",color.cpu().numpy())
             torch.save({
                     'step': step,
                     'model_state_dict' : model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
-                }, f"../test_result/ckpt/{step}.tar")
+                }, f"{args.basedir}/ckpt/{step}.tar")

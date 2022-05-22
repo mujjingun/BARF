@@ -48,8 +48,8 @@ class PosEncoding:
 
 
         for i in range(L):
-            self.pe_fn.append(lambda x: torch.cos(2**i*x))
-            self.pe_fn.append(lambda x: torch.sin(2**i*x))
+            self.pe_fn.append(lambda x,freq=i: torch.cos((2**freq)*x))
+            self.pe_fn.append(lambda x,freq=i: torch.sin((2**freq)*x))
 
     def ret_encode_dim(self):
         return self.encode_dim
@@ -71,8 +71,8 @@ class PosEncoding:
                     ll.append(torch.zeros_like(inputs))
                     ll.append(torch.zeros_like(inputs))
                 else:
-                    ll.append(((1-torch.cos(torch.Tensor([alpha-k])))/2)*cos_fn(inputs))
-                    ll.append(((1-torch.cos(torch.Tensor([alpha-k])))/2)*sin_fn(inputs))
+                    ll.append(((1-torch.cos(torch.Tensor([alpha-i])))/2)*cos_fn(inputs))
+                    ll.append(((1-torch.cos(torch.Tensor([alpha-i])))/2)*sin_fn(inputs))
             return torch.cat(ll, -1)
 
         
