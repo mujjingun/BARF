@@ -10,68 +10,150 @@ from skimage import io
 mse_loss = lambda output, gt : torch.mean((output-gt)**2)
 
 
-# From https://learnopencv.com/rotation-matrix-to-euler-angles/
-# Calculates Rotation Matrix given euler angles.
-def eulerAnglesToRotationMatrix(theta):
-    R_x = theta.new_zeros(theta.shape[0], 3, 3)
-    R_x[:, 0, 0] = 1.0
-    R_x[:, 1, 1] = torch.cos(theta[:, 0])
-    R_x[:, 1, 2] = -torch.sin(theta[:, 0])
-    R_x[:, 2, 1] = torch.sin(theta[:, 0])
-    R_x[:, 2, 2] = torch.cos(theta[:, 0])
+class Lie:
+    """
+    Lie algebra for SO(3) and SE(3) operations in PyTorch
+    """
 
-    R_y = theta.new_zeros(theta.shape[0], 3, 3)
-    R_y[:, 1, 1] = 1.0
-    R_y[:, 0, 0] = torch.cos(theta[:, 1])
-    R_y[:, 0, 2] = torch.sin(theta[:, 1])
-    R_y[:, 2, 0] = -torch.sin(theta[:, 1])
-    R_y[:, 2, 2] = torch.cos(theta[:, 1])
+    def so3_to_SO3(self,w): # [...,3]
+        wx = self.skew_symmetric(w)
+        theta = w.norm(dim=-1)[...,None,None]
+        I = torch.eye(3,device=w.device,dtype=torch.float32)
+        A = self.taylor_A(theta)
+        B = self.taylor_B(theta)
+        R = I+A*wx+B*wx@wx
+        return R
 
-    R_z = theta.new_zeros(theta.shape[0], 3, 3)
-    R_z[:, 2, 2] = 1.0
-    R_z[:, 0, 0] = torch.cos(theta[:, 2])
-    R_z[:, 0, 1] = -torch.sin(theta[:, 2])
-    R_z[:, 1, 0] = torch.sin(theta[:, 2])
-    R_z[:, 1, 1] = torch.cos(theta[:, 2])
+    def SO3_to_so3(self,R,eps=1e-7): # [...,3,3]
+        trace = R[...,0,0]+R[...,1,1]+R[...,2,2]
+        theta = ((trace-1)/2).clamp(-1+eps,1-eps).acos_()[...,None,None]%np.pi # ln(R) will explode if theta==pi
+        lnR = 1/(2*self.taylor_A(theta)+1e-8)*(R-R.transpose(-2,-1)) # FIXME: wei-chiu finds it weird
+        w0,w1,w2 = lnR[...,2,1],lnR[...,0,2],lnR[...,1,0]
+        w = torch.stack([w0,w1,w2],dim=-1)
+        return w
 
-    R = R_z @ R_y @ R_x
-    return R
+    def se3_to_SE3(self,wu): # [...,3]
+        w,u = wu.split([3,3],dim=-1)
+        wx = self.skew_symmetric(w)
+        theta = w.norm(dim=-1)[...,None,None]
+        I = torch.eye(3,device=w.device,dtype=torch.float32)
+        A = self.taylor_A(theta)
+        B = self.taylor_B(theta)
+        C = self.taylor_C(theta)
+        R = I+A*wx+B*wx@wx
+        V = I+B*wx+C*wx@wx
+        Rt = torch.cat([R,(V@u[...,None])],dim=-1)
+        return Rt
+
+    def SE3_to_se3(self,Rt,eps=1e-8): # [...,3,4]
+        R,t = Rt.split([3,1],dim=-1)
+        w = self.SO3_to_so3(R)
+        wx = self.skew_symmetric(w)
+        theta = w.norm(dim=-1)[...,None,None]
+        I = torch.eye(3,device=w.device,dtype=torch.float32)
+        A = self.taylor_A(theta)
+        B = self.taylor_B(theta)
+        invV = I-0.5*wx+(1-A/(2*B))/(theta**2+eps)*wx@wx
+        u = (invV@t)[...,0]
+        wu = torch.cat([w,u],dim=-1)
+        return wu
+
+    def skew_symmetric(self,w):
+        w0,w1,w2 = w.unbind(dim=-1)
+        O = torch.zeros_like(w0)
+        wx = torch.stack([torch.stack([O,-w2,w1],dim=-1),
+                          torch.stack([w2,O,-w0],dim=-1),
+                          torch.stack([-w1,w0,O],dim=-1)],dim=-2)
+        return wx
+
+    def taylor_A(self,x,nth=10):
+        # Taylor expansion of sin(x)/x
+        ans = torch.zeros_like(x)
+        denom = 1.
+        for i in range(nth+1):
+            if i>0: denom *= (2*i)*(2*i+1)
+            ans = ans+(-1)**i*x**(2*i)/denom
+        return ans
+    def taylor_B(self,x,nth=10):
+        # Taylor expansion of (1-cos(x))/x**2
+        ans = torch.zeros_like(x)
+        denom = 1.
+        for i in range(nth+1):
+            denom *= (2*i+1)*(2*i+2)
+            ans = ans+(-1)**i*x**(2*i)/denom
+        return ans
+    def taylor_C(self,x,nth=10):
+        # Taylor expansion of (x-sin(x))/x**3
+        ans = torch.zeros_like(x)
+        denom = 1.
+        for i in range(nth+1):
+            denom *= (2*i+2)*(2*i+3)
+            ans = ans+(-1)**i*x**(2*i)/denom
+        return ans
 
 
-# Calculates rotation matrix to euler angles
-# The result is the same as MATLAB except the order
-# of the euler angles ( x and z are swapped ).
-def rotationMatrixToEulerAngles(R):
-    sy = torch.sqrt(R[:, 0, 0]**2 + R[:, 1, 0]**2)
+class Quaternion:
 
-    singular = (sy < 1e-6)
-    x = torch.atan2(R[:, 2, 1], R[:, 2, 2])
-    y = torch.atan2(-R[:, 2, 0], sy)
-    z = torch.atan2(R[:, 1, 0], R[:, 0, 0])
+    def q_to_R(self,q):
+        # https://en.wikipedia.org/wiki/Rotation_matrix#Quaternion
+        qa,qb,qc,qd = q.unbind(dim=-1)
+        R = torch.stack([torch.stack([1-2*(qc**2+qd**2),2*(qb*qc-qa*qd),2*(qa*qc+qb*qd)],dim=-1),
+                         torch.stack([2*(qb*qc+qa*qd),1-2*(qb**2+qd**2),2*(qc*qd-qa*qb)],dim=-1),
+                         torch.stack([2*(qb*qd-qa*qc),2*(qa*qb+qc*qd),1-2*(qb**2+qc**2)],dim=-1)],dim=-2)
+        return R
 
-    x_sing = torch.atan2(-R[:, 1, 2], R[:, 1, 1])
-    y_sing = torch.atan2(-R[:, 2, 0], sy)
-    z_sing = torch.zeros_like(x_sing)
+    def R_to_q(self,R,eps=1e-8): # [B,3,3]
+        # https://en.wikipedia.org/wiki/Rotation_matrix#Quaternion
+        # FIXME: this function seems a bit problematic, need to double-check
+        row0,row1,row2 = R.unbind(dim=-2)
+        R00,R01,R02 = row0.unbind(dim=-1)
+        R10,R11,R12 = row1.unbind(dim=-1)
+        R20,R21,R22 = row2.unbind(dim=-1)
+        t = R[...,0,0]+R[...,1,1]+R[...,2,2]
+        r = (1+t+eps).sqrt()
+        qa = 0.5*r
+        qb = (R21-R12).sign()*0.5*(1+R00-R11-R22+eps).sqrt()
+        qc = (R02-R20).sign()*0.5*(1-R00+R11-R22+eps).sqrt()
+        qd = (R10-R01).sign()*0.5*(1-R00-R11+R22+eps).sqrt()
+        q = torch.stack([qa,qb,qc,qd],dim=-1)
+        for i,qi in enumerate(q):
+            if torch.isnan(qi).any():
+                K = torch.stack([torch.stack([R00-R11-R22,R10+R01,R20+R02,R12-R21],dim=-1),
+                                 torch.stack([R10+R01,R11-R00-R22,R21+R12,R20-R02],dim=-1),
+                                 torch.stack([R20+R02,R21+R12,R22-R00-R11,R01-R10],dim=-1),
+                                 torch.stack([R12-R21,R20-R02,R01-R10,R00+R11+R22],dim=-1)],dim=-2)/3.0
+                K = K[i]
+                eigval,eigvec = torch.linalg.eigh(K)
+                V = eigvec[:,eigval.argmax()]
+                q[i] = torch.stack([V[3],V[0],V[1],V[2]])
+        return q
 
-    x = torch.where(singular, x_sing, x)
-    y = torch.where(singular, y_sing, y)
-    z = torch.where(singular, z_sing, z)
+    def invert(self,q):
+        qa,qb,qc,qd = q.unbind(dim=-1)
+        norm = q.norm(dim=-1,keepdim=True)
+        q_inv = torch.stack([qa,-qb,-qc,-qd],dim=-1)/norm**2
+        return q_inv
 
-    return torch.stack([x, y, z], dim=1)
+    def product(self,q1,q2): # [B,4]
+        q1a,q1b,q1c,q1d = q1.unbind(dim=-1)
+        q2a,q2b,q2c,q2d = q2.unbind(dim=-1)
+        hamil_prod = torch.stack([q1a*q2a-q1b*q2b-q1c*q2c-q1d*q2d,
+                                  q1a*q2b+q1b*q2a+q1c*q2d-q1d*q2c,
+                                  q1a*q2c-q1b*q2d+q1c*q2a+q1d*q2b,
+                                  q1a*q2d+q1b*q2c-q1c*q2b+q1d*q2a],dim=-1)
+        return hamil_prod
+
 
 
 def pose_distance(perturbs):
-    mat = to_matrix(perturbs)
-    print(f"{(mat**2).mean():06f}")
+    print(f"pose RMSE: trans = {math.sqrt((perturbs[: :3]**2).mean().item()):.4f} / "
+          f"angle = {math.degrees(math.sqrt((perturbs[: 3:]**2).mean().item())):.4f}")
 
 
 def to_matrix(pose_params):
-    translation = pose_params[:, :3]
-    angles = pose_params[:, 3:]
-    rotation_mat = eulerAnglesToRotationMatrix(angles)
-    c2w = rotation_mat.new_zeros(translation.shape[0], 4, 4)
-    c2w[:, :3, :3] = rotation_mat
-    c2w[:, :3, 3] = translation
+    rotation_mat = Lie().se3_to_SE3(pose_params)  # eulerAnglesToRotationMatrix(angles)
+    c2w = rotation_mat.new_zeros(pose_params.shape[0], 4, 4)
+    c2w[:, :3, :] = rotation_mat
     c2w[:, 3, 3] = 1.0
     return c2w.float()
 
@@ -85,14 +167,16 @@ def train_nerf(model, pos_encoder, dir_encoder,
     # add perturbations on the camera pose
     pose_perturbs = torch.nn.Parameter(
         torch.cat([
-            torch.randn((poses.shape[0], 3), device=device) * 0.26,
-            torch.randn((poses.shape[0], 3), device=device) * math.radians(14.9),
+            torch.randn((poses.shape[0], 6), device=device) * 0.15
         ], dim=1)
     )
     pose_distance(pose_perturbs)
 
     lr_f_start, lr_f_end = 5e-4, 1e-4
+    lr_f_gamma = (lr_f_end/lr_f_start)**(1./args.n_steps)
     lr_p_start, lr_p_end = 1e-3, 1e-5
+    lr_p_gamma = (lr_p_end/lr_p_start)**(1./args.n_steps)
+
     optimizer = torch.optim.Adam(
         params=[
             {'params': model.parameters(), 'lr': lr_f_start},
@@ -107,7 +191,7 @@ def train_nerf(model, pos_encoder, dir_encoder,
     for step in pbar:
         optimizer.zero_grad()
 
-        # TODO: sample points on ray
+        # sample points on ray
         i_train = i_split[0]
         train_idx = np.random.choice(i_train, 1)
 
@@ -144,7 +228,7 @@ def train_nerf(model, pos_encoder, dir_encoder,
         color = estimate_color(model, sampled_points, sampled_directions, lin, pos_encoder, dir_encoder,
                                step if args.coarse_to_fine else -1)
 
-        # TODO: compute loss
+        # compute loss
         loss = mse_loss(color, gt)
         if loss_running_avg is None:
             loss_running_avg = loss
@@ -154,16 +238,15 @@ def train_nerf(model, pos_encoder, dir_encoder,
                              f"lr_f={optimizer.param_groups[0]['lr']} lr_p={optimizer.param_groups[1]['lr']}")
 
         loss.backward()
+        pose_grad = pose_perturbs.grad[train_idx].clone()
         optimizer.step()
 
-        step_frac = step / args.n_steps
-        optimizer.param_groups[0]['lr'] = math.exp(
-            math.log(lr_f_start) + (math.log(lr_f_end) - math.log(lr_f_start)) * step_frac)
-        optimizer.param_groups[1]['lr'] = math.exp(
-            math.log(lr_p_start) + (math.log(lr_p_end) - math.log(lr_p_start)) * step_frac)
+        optimizer.param_groups[0]['lr'] *= lr_f_gamma
+        optimizer.param_groups[1]['lr'] *= lr_p_gamma
 
         #sanity check and save model
         if (step%1000 == 0) and (step != 0) :
+            print(pose_grad)
             pose_distance(pose_perturbs)
 
             world_o, world_d = get_rays(hwf,c2w)
