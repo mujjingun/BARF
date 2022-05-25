@@ -160,7 +160,7 @@ def train_nerf(model, pos_encoder, dir_encoder,
 
         train_im = images[train_idx]  # H x W x 3
 
-        c2w = to_matrix(pose_perturbs[train_idx]) @ poses[train_idx]
+        c2w = poses[train_idx] @ to_matrix(pose_perturbs[train_idx])
         c2w = c2w.type(torch.float32)
 
         world_o, world_d = get_rays(hwf, c2w)  # world_o : (3), world_d (H x W x 3)

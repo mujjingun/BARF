@@ -4,6 +4,7 @@ from PIL import Image
 import numpy as np
 from skimage import io
 from tqdm import tqdm
+import cv2
 
 
 def load_dataset(dataset_type, basedir, half_res=False, testskip=1):
@@ -115,13 +116,16 @@ def load_blender(basedir, half_res, testskip):
 
     images = np.stack([np.array(img) for img in images])
     images = images.astype(np.float32) / 255.
+
     if half_res:
-        images = (
-            images[:, 0::2, 0::2]
-            + images[:, 0::2, 1::2]
-            + images[:, 1::2, 0::2]
-            + images[:, 1::2, 1::2]
-        ) * 0.25
+        hwf = [H // 2, W // 2, focal_length / 2.]
+        imgs_half_res = np.zeros((images.shape[0], H//2, W//2, 4))
+        for i, img in enumerate(images):
+            imgs_half_res[i] = cv2.resize(img, (W//2, H//2), interpolation=cv2.INTER_AREA)
+        images = imgs_half_res
+
+    # white background
+    images = images[..., :3] * images[..., -1:] + (1. - images[..., -1:])
 
     return images, poses, render_poses, hwf, i_split
 
