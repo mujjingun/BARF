@@ -16,6 +16,7 @@ class NeRFModel(nn.Module):
         self.linear_color = nn.ModuleList([nn.Linear(256,256), nn.Linear(256+self.in_view_dim,128), nn.Linear(128,3)])
 
         self.sigmoid_color = nn.Sigmoid()
+        self.softplus_density = nn.Softplus()
     def forward(self, location, direction):
         # TODO: implement positional encoding
 
@@ -27,7 +28,7 @@ class NeRFModel(nn.Module):
             feature = layer(feature) if i not in self.skip_connection else layer(torch.cat([input_pos,feature],-1))
             feature = nn.ReLU()(feature)
 
-        density = nn.ReLU()(self.linear_density(feature))
+        density = self.softplus_density(self.linear_density(feature))
 
         feature = self.linear_color[0](feature)
         feature = nn.ReLU()(self.linear_color[1](torch.cat([feature,input_dir],-1)))
