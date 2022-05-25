@@ -9,11 +9,11 @@ class NeRFModel(nn.Module):
         self.in_view_dim = in_view_dim
         self.skip_connection = skip_connection
 
-        self.linear_in = nn.Linear(in_dim,256)
-        self.linears_before = nn.ModuleList([nn.Linear(256,256) if i not in skip_connection else nn.Linear(256+self.in_dim,256) for i in range(self.depth-1)])
+        self.linear_in = nn.Linear(in_dim,128)
+        self.linears_before = nn.ModuleList([nn.Linear(128,128) if i not in skip_connection else nn.Linear(128+self.in_dim,128) for i in range(self.depth-1)])
 
-        self.linear_density = nn.Linear(256,1)
-        self.linear_color = nn.ModuleList([nn.Linear(256,256), nn.Linear(256+self.in_view_dim,128), nn.Linear(128,3)])
+        self.linear_density = nn.Linear(128,1)
+        self.linear_color = nn.ModuleList([nn.Linear(128,128), nn.Linear(128+self.in_view_dim,128), nn.Linear(128,3)])
 
         self.sigmoid_color = nn.Sigmoid()
         self.softplus_density = nn.Softplus()
@@ -38,19 +38,19 @@ class NeRFModel(nn.Module):
 
 
 class PosEncoding:
-    def __init__(self,in_dim,L=0,upper_bound=2000):
+    def __init__(self,in_dim,L=0,lower_bound=20000,upper_bound=100000):
         self.in_dim = in_dim
         self.L = L
         self.encode_dim = (2*L+1)*in_dim
         self.pe_fn = []
+        self.lower_bound = lower_bound
         self.upper_bound = upper_bound
 
-        self.pe_fn.append(lambda x:x)
-
+        self.pe_fn.append(lambda x: x)
 
         for i in range(L):
-            self.pe_fn.append(lambda x,freq=i: torch.cos((2**freq)*x))
-            self.pe_fn.append(lambda x,freq=i: torch.sin((2**freq)*x))
+            self.pe_fn.append(lambda x, freq=i: torch.cos((2**freq)*x))
+            self.pe_fn.append(lambda x, freq=i: torch.sin((2**freq)*x))
 
     def ret_encode_dim(self):
         return self.encode_dim
@@ -59,7 +59,7 @@ class PosEncoding:
         if (epoch == -1) or (epoch > self.upper_bound): # not use corase-to-fine positional encoding
             return torch.cat([fn(inputs) for fn in self.pe_fn], -1)
         else: # use coarse-to-fine positional encoding
-            ratio = epoch/self.upper_bound
+            ratio = min(max((epoch-self.lower_bound)/(self.upper_bound - self.lower_bound), 0), 1)
             alpha = ratio*self.L
             ll = [self.pe_fn[0](inputs)]
             for i in range(self.L):

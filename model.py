@@ -9,11 +9,11 @@ class NeRFModel(nn.Module):
         self.in_view_dim = in_view_dim
         self.skip_connection = skip_connection
 
-        self.linear_in = nn.Linear(in_dim,256)
-        self.linears_before = nn.ModuleList([nn.Linear(256,256) if i not in skip_connection else nn.Linear(256+self.in_dim,256) for i in range(self.depth-1)])
+        self.linear_in = nn.Linear(in_dim,128)
+        self.linears_before = nn.ModuleList([nn.Linear(128,128) if i not in skip_connection else nn.Linear(128+self.in_dim,128) for i in range(self.depth-1)])
 
-        self.linear_density = nn.Linear(256,1)
-        self.linear_color = nn.ModuleList([nn.Linear(256,256), nn.Linear(256+self.in_view_dim,128), nn.Linear(128,3)])
+        self.linear_density = nn.Linear(128,1)
+        self.linear_color = nn.ModuleList([nn.Linear(128,128), nn.Linear(128+self.in_view_dim,128), nn.Linear(128,3)])
 
         self.sigmoid_color = nn.Sigmoid()
         self.softplus_density = nn.Softplus()
