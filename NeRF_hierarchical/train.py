@@ -9,12 +9,13 @@ import os
 
 mse_loss = lambda output, gt : torch.mean((output-gt)**2)
 
-def train_nerf(model, pos_encoder, dir_encoder,
+def train_nerf(model_coarse,model_fine, pos_encoder, dir_encoder,
                images, poses, render_poses, hwf, i_split, device,
                args):
 
+    grad_vars = list(model_coarse.parameters()) + list(model_fine.parameters())
     optimizer = torch.optim.Adam(
-        params=model.parameters(),
+        params=grad_vars,
         lr=5e-4,
         betas=(0.9,0.999)
     )
@@ -44,7 +45,7 @@ def train_nerf(model, pos_encoder, dir_encoder,
         gt = gt_flatten[selected_pixel_idx]
 
         sampled_points, sampled_directions, lin = sample_points(
-            world_o, selected_d, args.num_points,device
+            world_o, selected_d, args.num_points_coarse,device
         )
 
 
@@ -55,11 +56,16 @@ def train_nerf(model, pos_encoder, dir_encoder,
         # sampled_points = pos_encoder.encode(sampled_points,step)
         # sampled_directions = dir_encoder.encode(sampled_directions,step)
 
-        color = estimate_color(model, sampled_points, sampled_directions, lin, pos_encoder, dir_encoder)
+        color, weights = estimate_color(model_coarse, sampled_points, sampled_directions, lin, pos_encoder, dir_encoder)
 
+        h_sampled_points, h_sampled_directions, rev_lin = invtrans_sampling(
+            weights, lin, args.num_points_fine, near, far, selected_d, world_o
+        )
+
+        color_fine, weights = estimate_color(model_fine, h_sampled_points, h_sampled_directions, rev_lin, pos_encoder, dir_encoder)
         # TODO: compute loss
         optimizer.zero_grad()
-        loss = mse_loss(color, gt)
+        loss = mse_loss(color, gt) + mse_loss(color_fine, gt)
         pbar.set_description(f"loss : {loss:06f} | {loss*1000:02f}")
 
         loss.backward()
@@ -77,8 +83,10 @@ def train_nerf(model, pos_encoder, dir_encoder,
 
             selected_d = world_d_flatten
 
+            num_points = 256
+
             sampled_points, sampled_directions, lin = sample_points(
-                world_o, selected_d, args.num_points, device
+                world_o, selected_d, num_points, device
             )
 
             colors = []
@@ -90,7 +98,7 @@ def train_nerf(model, pos_encoder, dir_encoder,
                     batch_points = sampled_points[batch_size*j:batch_size*(j+1)]
                     batch_directions = sampled_directions[batch_size*j:batch_size*(j+1)]
                     batch_lin = lin[batch_size*j:batch_size*(j+1)]
-                    color = estimate_color(model, batch_points, batch_directions, batch_lin, pos_encoder, dir_encoder)
+                    color = estimate_color(model_fine, batch_points, batch_directions, batch_lin, pos_encoder, dir_encoder)
                     colors.append(color)
 
             color = torch.cat(colors,0)
@@ -101,6 +109,7 @@ def train_nerf(model, pos_encoder, dir_encoder,
             io.imsave(f"{args.basedir}/img/{step}.png",color.cpu().numpy())
             torch.save({
                     'step': step,
-                    'model_state_dict' : model.state_dict(),
+                    'model_state_dict' : model_fine.state_dict(),
+                    'model_coarse_state_dict' : model_coarse.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
                 }, f"{args.basedir}/ckpt/{step}.tar")

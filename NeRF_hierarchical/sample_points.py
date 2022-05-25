@@ -85,3 +85,47 @@ def sample_points(world_o,world_d,num_point,device,near=2.,far=6.):
 
 
     return points, world_d, lin
+
+
+def invtrans_sampling(weights, lin, num_points, near, far, world_d, world_o):
+    """
+    weights : 
+    lin : 
+    num_points : 
+    near : 
+    far :
+    world_d :
+    world_o :
+    """
+    torch.set_default_tensor_type('torch.cuda.FloatTensor')
+
+    num_rays = weights.shape[0]
+    num_sample_points = weights.shape[1]
+
+    nears = near*torch.ones((num_rays,1)) # [num_rays,1]
+    lin2 = torch.cat([nears,lin],1) #[num_rays,1+num_points]
+
+    sum_weights = torch.sum(weights,axis=1).unsqueeze(-1).expand(-1,num_sample_points) # [num_rays,num_points]
+    zeros = torch.zeros((num_rays,1)) #[num_rays,1]
+
+    cdf = torch.cat([zeros,torch.cumsum(weights,1)/sum_weights],1) #[num_rays,1+num_points]
+
+    rand, _ = torch.sort(torch.rand(1,num_points))
+
+    rand = rand.expand(num_rays,num_points).contiguous()
+    w_ind = torch.searchsorted(cdf,rand)
+
+    w_up = torch.gather(cdf,1,w_ind)-rand
+    w_down = rand-torch.gather(cdf,1,w_ind-1)
+
+    lin_up = torch.gather(lin2,1,w_ind)
+    lin_down = torch.gather(lin2,1,w_ind-1)
+
+    rev_lin = (lin_up*w_down + lin_down*w_up) / (w_up+w_down)
+
+
+    world_d_expand = world_d.unsqueeze(1).expand((num_rays,num_points,3))
+    world_o_expand = world_o.expand(world_d.shape)
+    points = world_o_expand+world_d*rev_lin
+
+    return points, world_d_expand, rev_lin

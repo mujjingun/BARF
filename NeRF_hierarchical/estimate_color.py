@@ -64,7 +64,8 @@ def estimate_color(model, sampled_points, sampled_directions, lin, pos_encoder, 
     # print(color.shape)
     # print(density.shape)
     # print(delta.shape)
-    color = torch.sum(T * (1 - torch.exp(-density * delta)) * color, dim=1)
+    weights = T * (1 - torch.exp(-density * delta))
+    color = torch.sum(weights * color, dim=1)
     # print(color.shape)
     # input(torch.squeeze(color[0]))
-    return color
+    return color, weights
