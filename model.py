@@ -17,6 +17,7 @@ class NeRFModel(nn.Module):
 
         self.sigmoid_color = nn.Sigmoid()
         self.softplus_density = nn.Softplus()
+
     def forward(self, location, direction):
         # TODO: implement positional encoding
 

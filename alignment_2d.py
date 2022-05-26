@@ -4,6 +4,8 @@ import argparse
 import matplotlib.pyplot as plt
 from skimage import io
 import pathlib
+from model import PosEncoding
+from tqdm import trange, tqdm
 
 
 def sl3_to_SL3(h):
@@ -17,15 +19,7 @@ def sl3_to_SL3(h):
     return H
 
 
-# pick random patches
-def generate_patches(image, num_patches, noise_scale, crop_scale):
-    H, W = image.shape[1:]
-    M = num_patches
-    image = image[None].expand(M, -1, -1, -1)
-
-    h = torch.randn(M, 8) * noise_scale
-    h[0] = 0.0  # identity for the first patch
-
+def gen_grid(h, H, W, crop_scale):
     mat = sl3_to_SL3(h)
 
     grid = F.affine_grid(
@@ -37,7 +31,19 @@ def generate_patches(image, num_patches, noise_scale, crop_scale):
     grid = torch.cat([grid, torch.ones(1, H, W, 1)], -1)  # [1, H, W, 3]
     grid = torch.einsum('mdt,mhwd->mhwt', mat, grid.expand(5, -1, -1, -1))
     grid = (grid / grid[..., -1:])[..., :-1]
+    return grid
 
+
+# pick random patches
+def generate_patches(image, num_patches, noise_scale, crop_scale):
+    H, W = image.shape[1:]
+    M = num_patches
+    image = image[None].expand(M, -1, -1, -1)
+
+    h = torch.randn(M, 8) * noise_scale
+    h[0] = 0.0  # identity for the first patch
+
+    grid = gen_grid(h, H, W, crop_scale)
     patches = F.grid_sample(image, grid, align_corners=False)
     return patches, h
 
@@ -75,6 +81,64 @@ def visualize_patches(image, patches, true_poses, num_patches, crop_scale, based
     plt.savefig(basedir / 'warps.png', bbox_inches='tight')
 
 
+class Model(torch.nn.Module):
+    def __init__(self, pos_enc):
+        super(Model, self).__init__()
+        self.pos_enc = pos_enc
+
+        self.features = torch.nn.Sequential(
+            torch.nn.Linear(pos_enc.encode_dim, 256),
+            torch.nn.Softplus(),
+            torch.nn.Linear(256, 256),
+            torch.nn.Softplus(),
+            torch.nn.Linear(256, 256),
+            torch.nn.Softplus(),
+            torch.nn.Linear(256, 3),
+        )
+
+    def forward(self, x, step):
+        # x: [batch_size, 2]
+        # output: color [batch_size, 3]
+        x = self.pos_enc.encode(x, step)
+        x = self.features(x)
+        x = torch.sigmoid(x)
+        return x
+
+
+def train(args, patches, true_poses):
+    # patches: (M, 3, H, W)
+    # true_poses: (M, 8)
+    poses = torch.nn.Parameter(torch.zeros(args.num_patches - 1, 8))
+    model = Model(PosEncoding(2, 8, 0, 2000))
+    H, W = patches.shape[2:]
+    M = len(patches)
+
+    opt = torch.optim.Adam(
+        [*model.parameters(), poses],
+        lr=0.001
+    )
+
+    for step in trange(5000):
+        opt.zero_grad()
+
+        poses_fixed = torch.cat([torch.zeros(1, 8), poses], 0)
+
+        grid = gen_grid(poses_fixed, H, W, args.crop_scale)  # (M, H, W, 2)
+        grid = grid.reshape(-1, 2)  # (MHW, 2)
+
+        prediction = model(grid, step)  # (MHW, 3)
+        prediction = prediction.reshape(M, H, W, 3)  # (M, H, W, 3)
+        ground_truth = patches.permute(0, 2, 3, 1)  # (M, H, W, 3)
+
+        loss = ((prediction - ground_truth)**2).sum()
+        tqdm.write(f"loss={loss:.4f}")
+
+        loss.backward()
+        opt.step()
+
+    return poses, model
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--image_path', type=str, default="../data/cat.jpg")
@@ -94,7 +158,7 @@ def main():
 
     visualize_patches(image, patches, true_poses, args.num_patches, args.crop_scale, basedir)
 
-    poses = torch.nn.Parameter(torch.zeros(args.num_patches, 8))
+    train(args, patches, true_poses)
 
 
 if __name__ == "__main__":
