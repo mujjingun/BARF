@@ -140,11 +140,12 @@ def train_nerf(model, pos_encoder, dir_encoder,
     lr_p_start, lr_p_end = 1e-3, 1e-5
     lr_p_gamma = (lr_p_end / lr_p_start) ** (1. / args.n_steps)
 
-    optimizer = torch.optim.Adam(
-        params=[
-            {'params': model.parameters(), 'lr': lr_f_start},
-            {'params': [pose_perturbs], 'lr': lr_p_start},
-        ],
+    optimizer_f = torch.optim.Adam(
+        params=[{'params': model.parameters(), 'lr': lr_f_start}],
+        betas=(0.9, 0.999),
+    )
+    optimizer_p = torch.optim.Adam(
+        params=[{'params': [pose_perturbs], 'lr': lr_p_start}],
         betas=(0.9, 0.999),
     )
 
@@ -152,7 +153,8 @@ def train_nerf(model, pos_encoder, dir_encoder,
 
     pbar = tqdm(range(args.n_steps))
     for step in pbar:
-        optimizer.zero_grad()
+        optimizer_f.zero_grad()
+        optimizer_p.zero_grad()
 
         # sample points on ray
         i_train = i_split[0]
@@ -197,14 +199,17 @@ def train_nerf(model, pos_encoder, dir_encoder,
         else:
             loss_running_avg = 0.99 * loss_running_avg + 0.01 * loss
         pbar.set_description(f"loss : {loss:06f} | {loss * 1000:02f} ({loss_running_avg * 1000:02f}) "
-                             f"lr_f={optimizer.param_groups[0]['lr']} lr_p={optimizer.param_groups[1]['lr']}")
+                             f"lr_f={optimizer_f.param_groups[0]['lr']} lr_p={optimizer_p.param_groups[0]['lr']}")
 
         loss.backward()
         pose_grad = pose_perturbs.grad[train_idx].clone()
-        optimizer.step()
+        optimizer_f.step()
+        optimizer_p.step()
 
-        optimizer.param_groups[0]['lr'] *= lr_f_gamma
-        optimizer.param_groups[1]['lr'] *= lr_p_gamma
+        for grp in optimizer_f.param_groups:
+            grp['lr'] *= lr_f_gamma
+        for grp in optimizer_p.param_groups:
+            grp['lr'] *= lr_p_gamma
 
         # sanity check and save model
         if (step % 1000 == 0) and (step != 0):
@@ -243,6 +248,7 @@ def train_nerf(model, pos_encoder, dir_encoder,
             torch.save({
                 'step': step,
                 'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
+                'optimizer_f_state_dict': optimizer_f.state_dict(),
+                'optimizer_p_state_dict': optimizer_p.state_dict(),
                 'pose': pose_perturbs
             }, f"{args.basedir}/ckpt/{step}.tar")
