@@ -62,6 +62,7 @@ class PosEncoding:
         else: # use coarse-to-fine positional encoding
             ratio = min(max((epoch-self.lower_bound)/(self.upper_bound - self.lower_bound), 0), 1)
             alpha = ratio*self.L
+            device = inputs.device
             ll = [self.pe_fn[0](inputs)]
             for i in range(self.L):
                 cos_fn = self.pe_fn[2*i+1]
@@ -70,11 +71,11 @@ class PosEncoding:
                     ll.append(cos_fn(inputs))
                     ll.append(sin_fn(inputs))
                 elif alpha < i:
-                    ll.append(torch.zeros_like(inputs))
-                    ll.append(torch.zeros_like(inputs))
+                    ll.append(torch.zeros_like(inputs, device=device))
+                    ll.append(torch.zeros_like(inputs, device=device))
                 else:
-                    ll.append(((1-torch.cos(torch.Tensor([alpha-i])))/2)*cos_fn(inputs))
-                    ll.append(((1-torch.cos(torch.Tensor([alpha-i])))/2)*sin_fn(inputs))
+                    ll.append(((1-torch.cos(torch.tensor([alpha-i], device=device)))/2)*cos_fn(inputs))
+                    ll.append(((1-torch.cos(torch.tensor([alpha-i], device=device)))/2)*sin_fn(inputs))
             return torch.cat(ll, -1)
 
         
