@@ -46,17 +46,19 @@ def estimate_color(model, sampled_points, sampled_directions, lin, pos_encoder, 
         dir_encoder.encode(sampled_directions_normalize, step).type(torch.float32)
     )
 
-    density = density.reshape(num_rays, num_point, 1)  # density: [num_rays, num_point, 1]
+    density = density.reshape(num_rays, num_point)  # density: [num_rays, num_point, 1]
     color = color.reshape(num_rays, num_point, 3)  # color: [num_rays, num_point, 3]
 
     # ``transparency''
-    delta = torch.unsqueeze(delta,-1)
 
-    tmp = density * delta
-    tmp = torch.cumsum(tmp, dim=1) - tmp[:, 0].unsqueeze(1)
+    tmp = torch.cat([torch.zeros(density.shape[0],1), density*delta],1)
+    tmp = torch.cumsum(tmp,dim=1)[...,:-1]
     T = torch.exp(-tmp)
 
-    # integrated pixel color
-    color = torch.sum(T * (1 - torch.exp(-density * delta)) * color, dim=1)
+    alpha = 1. - torch.exp(-density * delta)
+
+    w = T*alpha #[num_rays, num_point]
+
+    color = torch.sum(w.unsqueeze(2) * color, dim=1)
 
     return color
