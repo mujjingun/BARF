@@ -19,7 +19,7 @@ def sl3_to_SL3(h):
     return H
 
 
-def gen_grid(h, H, W, crop_scale):
+def gen_grid(h, H, W, M, crop_scale):
     mat = sl3_to_SL3(h)
 
     grid = F.affine_grid(
@@ -29,7 +29,7 @@ def gen_grid(h, H, W, crop_scale):
     ) * crop_scale
 
     grid = torch.cat([grid, torch.ones(1, H, W, 1, device=h.device)], -1)  # [1, H, W, 3]
-    grid = torch.einsum('mdt,mhwd->mhwt', mat, grid.expand(5, -1, -1, -1))
+    grid = torch.einsum('mdt,mhwd->mhwt', mat, grid.expand(M, -1, -1, -1))
     grid = (grid / grid[..., -1:])[..., :-1]
     return grid
 
@@ -43,7 +43,7 @@ def generate_patches(image, num_patches, noise_scale, crop_scale):
     h = torch.randn(M, 8, device=image.device) * noise_scale
     h[0] = 0.0  # identity for the first patch
 
-    grid = gen_grid(h, H, W, crop_scale)
+    grid = gen_grid(h, H, W, num_patches, crop_scale)
     patches = F.grid_sample(image, grid, align_corners=False)
     return patches, h
 
@@ -107,6 +107,18 @@ class Model(torch.nn.Module):
         return x
 
 
+@torch.no_grad()
+def visualize_f(model, device, H, W, step, basedir, filename='image.png'):
+    grid = gen_grid(torch.zeros(1, 8, device=device), H, W, 1, 1.0)
+    grid = grid.reshape(-1, 2)
+    pixels = model(grid, step)
+    pixels = pixels.reshape(H, W, 3)
+
+    plt.figure(figsize=(5, 5), dpi=200)
+    plt.imshow(pixels.cpu())
+    plt.savefig(basedir / filename, bbox_inches='tight')
+
+
 def train(args, image, patches, true_poses, basedir):
     # patches: (M, 3, H, W)
     # true_poses: (M, 8)
@@ -114,6 +126,13 @@ def train(args, image, patches, true_poses, basedir):
     model = Model(PosEncoding(2, 8, 0, 2000)).to(image.device)
     H, W = patches.shape[2:]
     M = len(patches)
+
+    if (basedir / 'ckpt_4999.pth').exists():
+        ckpt = torch.load(basedir / 'ckpt_4999.pth', map_location=image.device)
+        model.load_state_dict(ckpt['state_dict'])
+        poses.data.copy_(ckpt['poses'])
+        visualize_f(model, image.device, H, W, 4999, basedir)
+        return
 
     opt = torch.optim.Adam(
         [*model.parameters(), poses],
@@ -125,7 +144,7 @@ def train(args, image, patches, true_poses, basedir):
 
         poses_fixed = torch.cat([torch.zeros(1, 8, device=poses.device), poses], 0)
 
-        grid = gen_grid(poses_fixed, H, W, args.crop_scale)  # (M, H, W, 2)
+        grid = gen_grid(poses_fixed, H, W, args.num_patches, args.crop_scale)  # (M, H, W, 2)
         grid = grid.reshape(-1, 2)  # (MHW, 2)
 
         prediction = model(grid, step)  # (MHW, 3)
@@ -138,8 +157,9 @@ def train(args, image, patches, true_poses, basedir):
         loss.backward()
         opt.step()
 
-        if (step + 1) % 10 == 0:
+        if (step + 1) % 100 == 0:
             visualize_corners(image, poses_fixed.data, args.crop_scale, M, basedir, f"warps_{step}.png")
+            visualize_f(model, image.device, H, W, step, basedir, f"image_{step}.png")
 
         if (step + 1) % 100 == 0:
             torch.save({
