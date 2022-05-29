@@ -125,7 +125,7 @@ def load_blender(basedir, half_res, testskip):
         images = imgs_half_res
 
     # white background
-    images = images[..., :3] * images[..., -1:] + (1. - images[..., -1:])
+    # images = images[..., :3] * images[..., -1:] + (1. - images[..., -1:])
 
     return images, poses, render_poses, hwf, i_split
 

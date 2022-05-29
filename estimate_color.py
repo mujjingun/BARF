@@ -31,20 +31,33 @@ def estimate_color(model, sampled_points, sampled_directions, lin, pos_encoder, 
     d_norm = torch.norm(sampled_directions,p=2,dim=1, keepdim=True) #num_rays, 1
     delta = z_diff * d_norm
 
-    del z_diff
+    # del z_diff
     
     sampled_directions_normalize = sampled_directions/d_norm
     
-    del d_norm
+    # del d_norm
 
     
     sampled_directions_normalize = sampled_directions_normalize.unsqueeze(1).expand_as(sampled_points).reshape(-1, 3)
     sampled_points = sampled_points.reshape(-1, 3)
 
-    density, color = model(
-        pos_encoder.encode(sampled_points, step).type(torch.float32),
-        dir_encoder.encode(sampled_directions_normalize, step).type(torch.float32)
-    )
+    in_pos = pos_encoder(sampled_points, step).type(torch.float32) if pos_encoder is not None else sampled_points
+    in_view = dir_encoder(sampled_directions_normalize, step).type(torch.float32) if dir_encoder is not None else sampled_directions_normalize
+
+    # print("step :",step)
+
+    # print("position")
+    # print(sampled_points[0])
+    # print(in_pos[0])
+
+    # print("direction")
+    # print(sampled_directions_normalize[0])
+    # print(in_view[0])
+
+    output = model(torch.cat([in_pos,in_view],-1))
+
+    color = output[...,:3]
+    density = output[...,3]
 
     density = density.reshape(num_rays, num_point)  # density: [num_rays, num_point, 1]
     color = color.reshape(num_rays, num_point, 3)  # color: [num_rays, num_point, 3]

@@ -1,7 +1,7 @@
 import argparse
 import loader
 from model import *
-from train import train_nerf
+from train2 import train_nerf
 import torch
 import os
 import numpy as np
@@ -26,6 +26,11 @@ def main():
     parser.add_argument('-c2f', '--coarse_to_fine', default=False, action='store_true')
     parser.add_argument('--c2f_begin', type=int, default=20000)
     parser.add_argument('--c2f_end', type=int, default=100000)
+    parser.add_argument('--without_pos_enc', default=False, action='store_true')
+    parser.add_argument('--lr_f_start', type=float, default=5e-4)
+    parser.add_argument('--lr_f_end', type=float, default=1e-4)
+    parser.add_argument('--lr_p_start', type=float, default=1e-3)
+    parser.add_argument('--lr_p_end', type=float, default=1e-5)
 
     args = parser.parse_args()
 
@@ -38,11 +43,21 @@ def main():
     if images.shape[-1] == 4:
         images = images[...,:3]
 
-    pos_encoder = PosEncoding(3,L=args.pos_enc_L,lower_bound=args.c2f_begin,upper_bound=args.c2f_end)
-    dir_encoder = PosEncoding(3,L=args.dir_enc_L,lower_bound=args.c2f_begin,upper_bound=args.c2f_end)
 
-    in_dim = pos_encoder.ret_encode_dim()
-    in_view_dim = dir_encoder.ret_encode_dim()
+    pos_encoding = PosEncoding(3,L=args.pos_enc_L,lower_bound=args.c2f_begin,upper_bound=args.c2f_end)
+    dir_encoding = PosEncoding(3,L=args.dir_enc_L,lower_bound=args.c2f_begin,upper_bound=args.c2f_end)
+
+    in_dim = pos_encoding.ret_encode_dim()
+    in_view_dim = dir_encoding.ret_encode_dim()
+
+    pos_encoder = lambda x, step ,encoder=pos_encoding : encoder.encode(x,step)
+    dir_encoder = lambda x, step ,encoder=dir_encoding : encoder.encode(x,step)
+
+    if args.without_pos_enc:
+        in_dim = 3
+        in_view_dim = 3
+        pos_encoder = None
+        dir_encoder = None
 
     model = NeRFModel(in_dim=in_dim, in_view_dim=in_view_dim).to(device)
 
