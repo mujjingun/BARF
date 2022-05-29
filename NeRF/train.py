@@ -38,7 +38,7 @@ def train_nerf(model, pos_encoder, dir_encoder,
         world_d_flatten = world_d.reshape(-1,3)
         gt_flatten = torch.from_numpy(train_im.reshape(-1,3)).to(device)
 
-        selected_pixel_idx = np.random.choice(np.arange(gt_flatten.shape[0]),args.num_rays)
+        selected_pixel_idx = np.random.choice(np.arange(gt_flatten.shape[0]),args.num_rays, replace=False)
         selected_d = world_d_flatten[selected_pixel_idx]
 
         gt = gt_flatten[selected_pixel_idx]
