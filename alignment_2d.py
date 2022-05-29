@@ -88,21 +88,21 @@ class Model(torch.nn.Module):
         super(Model, self).__init__()
         self.pos_enc = pos_enc
 
-        self.features = torch.nn.Sequential(
+        self.features = torch.nn.ModuleList([
             torch.nn.Linear(pos_enc.encode_dim, 256),
-            torch.nn.Softplus(),
             torch.nn.Linear(256, 256),
-            torch.nn.Softplus(),
             torch.nn.Linear(256, 256),
-            torch.nn.Softplus(),
             torch.nn.Linear(256, 3),
-        )
+        ])
 
     def forward(self, x, step):
         # x: [batch_size, 2]
         # output: color [batch_size, 3]
         x = self.pos_enc.encode(x, step)
-        x = self.features(x)
+        for feat in self.features[:-1]:
+            x = feat(x)
+            x = F.softplus(x)
+        x = self.features[-1](x)
         x = torch.sigmoid(x)
         return x
 
@@ -176,7 +176,7 @@ def main():
     parser.add_argument('--image_path', type=str, default="../data/cat.jpg")
     parser.add_argument('--num_patches', type=int, default=5)
     parser.add_argument('--basedir', type=str, default='planar/')
-    parser.add_argument('--noise_scale', type=float, default=0.2)
+    parser.add_argument('--noise_scale', type=float, default=0.1)
     parser.add_argument('--crop_scale', type=float, default=0.4)
     args = parser.parse_args()
 
