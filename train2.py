@@ -11,18 +11,74 @@ import pytorch3d.transforms
 mse_loss = lambda output, gt: torch.mean((output - gt) ** 2)
 calc_psnr = lambda mse : -10*torch.log10(mse)
 
-def rot_distance(perturbs):
-    R1 = torch.eye(3, device=perturbs.device).unsqueeze(0).expand(perturbs.shape[0], 3, 3)
-    R2 = pytorch3d.transforms.so3_exponential_map(perturbs[...,3:])
-    
-    return pytorch3d.transforms.so3_relative_angle(R1,R2)
 
-def pose_distance(perturbs):
-    trans_dist = torch.sqrt((perturbs[:, :3] ** 2).sum(1)).mean(0)
-    angle_dist = rot_distance(perturbs).mean(0)
+def procrustes_analysis(X0, X1):  # [N, 3]
+    # translation
+    mu0 = X0.mean(dim=0, keepdim=True)
+    mu1 = X1.mean(dim=0, keepdim=True)
+    X0 = X0 - mu0
+    X1 = X1 - mu1
 
-    print(f"pose RMSE: trans = {trans_dist.item():.4f} / "
+    # scale
+    s0 = (X0**2).sum(dim=-1).mean().sqrt()  # TODO replace with std
+    s1 = (X1**2).sum(dim=-1).mean().sqrt()
+    X0 = X0 / s0
+    X1 = X1 / s1
+
+    # obtain rotation matrix
+    U, S, Vh = np.linalg.svd((X0.T @ X1).double().cpu().numpy())
+    R = U @ Vh
+    if np.linalg.det(R) < 0:
+        R[2] *= -1
+    R = torch.tensor(R, device=X0.device, dtype=torch.float32)
+    # align X1 to X0: X1to0 = (X1-t1)/s1@R.t()*s0+t0
+    return mu0[0], mu1[0], s0, s1, R
+
+
+@torch.no_grad()
+def pose_distance(truth, perturbs):
+    # obtain camera positions
+    truth, perturbs = invert(truth), invert(perturbs)  # (N, 3, 4)
+
+    origin = torch.tensor([[0., 0., 0., 1.]], device=truth.device).unsqueeze(-1)
+    truth_origin = (truth @ origin).squeeze(2)
+    perturbs_origin = (perturbs @ origin).squeeze(2)  # (N, 3)
+
+    # perform procrustes analysis
+    truth_mu, perturbs_mu, truth_scale, perturbs_scale, rotation = procrustes_analysis(truth_origin, perturbs_origin)
+
+    # align the perturbed origin to ground truth
+    aligned_origin = ((perturbs_origin - perturbs_mu) / perturbs_scale) @ rotation.T * truth_scale + truth_mu  # (N, 3)
+    R_aligned = perturbs[..., :3] @ rotation.T  # (N, 3, 3)
+
+    trans_dist = (truth_origin - aligned_origin).norm(dim=-1).mean()
+    angle_dist = pytorch3d.transforms.so3_relative_angle(truth[..., :3], R_aligned).mean(0)
+
+    print(f"pose error: trans = {trans_dist.item():.4f} / "
           f"angle = {math.degrees(angle_dist.item()):.4f}")
+
+
+def to_matrix(R, t):
+    R = R.float()
+    t = t.float()
+    pose = torch.cat([R, t[..., None]], dim=-1)  # [...,3,4]
+    return pose
+
+
+def invert(pose):
+    # invert a camera pose
+    R, t = pose[..., :3], pose[..., 3:]
+    R_inv = R.transpose(-1, -2)  # TODO replace with .mT
+    t_inv = (-R_inv @ t)[..., 0]
+    pose_inv = to_matrix(R=R_inv, t=t_inv)
+    return pose_inv
+
+
+def expand(M):
+    return torch.cat([
+        M,
+        torch.tensor([[[0., 0., 0., 1.]]], device=M.device).expand(M.shape[0], -1, -1)
+    ], dim=1)
 
 
 def train_nerf(model, pos_encoder, dir_encoder,
@@ -37,24 +93,25 @@ def train_nerf(model, pos_encoder, dir_encoder,
     # poses = torch.tensor(poses, dtype=torch.float32, device=device)
     # train_poses = poses[:num_train]
     train_poses = torch.tensor(poses, dtype=torch.float32, device=device)[i_train]
-    print(train_poses[0])
     # add perturbations on the camera pose
 
     # train_poses_t = train_poses[:,:3,3].clone()
     # train_poses_zeros = train_poses[:,3,:3].clone()
     # train_poses[:,3,:3] = train_poses_t
     # train_poses[:,:3,3] = train_poses_zeros
-    train_poses = train_poses.transpose(1,2)
-    print(train_poses[0])
+    train_poses = invert(train_poses[:, :3, :])
 
-    pose_params = pytorch3d.transforms.se3_log_map(train_poses)
-
-    print(pytorch3d.transforms.se3_exp_map(torch.Tensor([[1,1,1,1,1,1]])))
+    pose_noise = torch.normal(
+        mean=torch.zeros((train_poses.shape[0], 6)),
+        std=torch.ones((train_poses.shape[0], 6)) * 0.15).to(device)
 
     pose_perturbs = torch.nn.Parameter(
-        torch.normal(mean=torch.zeros((train_poses.shape[0], 6)), std=torch.ones((train_poses.shape[0],6))*0.15).to(device)
+        torch.zeros((train_poses.shape[0], 6), device=device)
     )
-    pose_distance(pose_perturbs)
+    calc_poses = (train_poses @
+                  pytorch3d.transforms.se3_exp_map(pose_noise).mT @
+                  pytorch3d.transforms.se3_exp_map(pose_perturbs).mT)
+    pose_distance(train_poses, calc_poses)
 
     lr_f_start, lr_f_end = args.lr_f_start, args.lr_f_end
     lr_f_gamma = (lr_f_end / lr_f_start) ** (1. / args.n_steps)
@@ -92,8 +149,10 @@ def train_nerf(model, pos_encoder, dir_encoder,
         # print("(before step) pose perturb at train index is", pose_perturbs[train_idx])
 
         # c2w = poses[train_idx] @ to_matrix(pose_perturbs[train_idx])
-        c2w_param = pose_params[train_idx] + pose_perturbs[train_idx]
-        c2w = pytorch3d.transforms.se3_exp_map(c2w_param).squeeze().transpose(0,1)
+        c2w = (train_poses[train_idx] @
+               pytorch3d.transforms.se3_exp_map(pose_noise)[train_idx].mT @
+               pytorch3d.transforms.se3_exp_map(pose_perturbs)[train_idx].mT)
+        c2w = invert(c2w)
         c2w = c2w.type(torch.float32)
 
         world_o, world_d = get_rays(hwf, c2w)  # world_o : (3), world_d (H x W x 3)
@@ -153,26 +212,26 @@ def train_nerf(model, pos_encoder, dir_encoder,
         # sanity check and save model
         if (step % 1000 == 0) and (step != 0):
             print(pose_grad)
-            pose_distance(pose_perturbs)
+            calc_poses = (train_poses @
+                          pytorch3d.transforms.se3_exp_map(pose_noise).mT @
+                          pytorch3d.transforms.se3_exp_map(pose_perturbs).mT)
+            pose_distance(train_poses, calc_poses)
 
+        if (step % 8000 == 0) and (step != 0):
             world_o, world_d = get_rays(hwf, c2w)
             world_d_flatten = world_d.reshape(-1, 3)
 
             selected_d = world_d_flatten
 
-            sampled_points, sampled_directions, lin = sample_points(
-                world_o, selected_d, args.num_points, device
-            )
-
             colors = []
             total_pixel = hwf[0] * hwf[1]
-            batch_size = 4000
+            batch_size = 8000 // 8
             iter = total_pixel // batch_size
             with torch.no_grad():
                 for j in trange(iter):
-                    batch_points = sampled_points[batch_size * j:batch_size * (j + 1)]
-                    batch_directions = sampled_directions[batch_size * j:batch_size * (j + 1)]
-                    batch_lin = lin[batch_size * j:batch_size * (j + 1)]
+                    batch_points, batch_directions, batch_lin = sample_points(
+                        world_o, selected_d[batch_size * j:batch_size * (j + 1)], args.num_points*8, device
+                    )
                     color = estimate_color(model, batch_points, batch_directions, batch_lin, pos_encoder, dir_encoder,
                                            step if args.coarse_to_fine else -1)
                     colors.append(color)
@@ -192,5 +251,6 @@ def train_nerf(model, pos_encoder, dir_encoder,
                 'model_state_dict': model.state_dict(),
                 'optimizer_f_state_dict': optimizer_f.state_dict(),
                 'optimizer_p_state_dict': optimizer_p.state_dict(),
+                'pose_noise': pose_noise,
                 'pose': pose_perturbs
             }, f"{args.basedir}/ckpt/{step}.tar")
