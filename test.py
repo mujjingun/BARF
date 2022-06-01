@@ -50,7 +50,7 @@ def test_nerf(model, pos_encoder, dir_encoder,
     R_aligned = test_poses_inv[..., :3] @ rotation.T
     t_aligned = (-R_aligned @ aligned_origin[..., None])[..., 0]
     test_poses_inv = to_matrix(R_aligned, t_aligned)
-    test_poses = expand(invert(test_poses_inv))
+    #test_poses = expand(invert(test_poses_inv))
 
     for idx in i_test:
         test_im = images[idx]
@@ -67,7 +67,7 @@ def test_nerf(model, pos_encoder, dir_encoder,
         colors = []
         depths = []
         total_pixel = hwf[0] * hwf[1]
-        batch_size = 8000 // (args.num_points // 256)
+        batch_size = 8000 // max(1, (args.num_points // 256))
         iter = total_pixel // batch_size
 
         for j in trange(iter):
