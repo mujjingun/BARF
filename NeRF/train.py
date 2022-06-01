@@ -22,7 +22,7 @@ def train_nerf(model, pos_encoder, dir_encoder,
 
     lr_f_start, lr_f_end = args.lr_start, args.lr_end
 
-    pbar = tqdm(range(args.n_steps))
+    pbar = tqdm(range(args.n_steps + 1))
     for step in pbar:
 
         i_train = i_split[0]
