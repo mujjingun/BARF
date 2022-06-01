@@ -168,5 +168,5 @@ def gen_pose(theta, phi, distance):
     )
 
 
-if __name__ == "__main__":
-    load_dataset('blender', 'nerf_synthetic/lego')
+# if __name__ == "__main__":
+#     load_dataset('blender', 'nerf_synthetic/lego')

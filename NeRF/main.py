@@ -2,6 +2,7 @@ import argparse
 import loader
 from model import *
 from train import train_nerf
+from test import test_nerf
 import torch
 import os
 import numpy as np
@@ -27,6 +28,8 @@ def main():
     parser.add_argument('--lr_start', type=float, default=5e-4)
     parser.add_argument('--lr_end', type=float, default=1e-4)
     parser.add_argument('--white_background', default=False, action='store_true')
+    parser.add_argument('--model_path', type=str, default=None)
+    parser.add_argument('--test', default=False, action='store_true')
 
     args = parser.parse_args()
 
@@ -61,16 +64,26 @@ def main():
 
     model = NeRFModel2(in_dim=in_dim, in_view_dim=in_view_dim).to(device)
 
+    optimizer_state = None
+    if args.model_path is not None:
+        checkpoint = torch.load(args.model_path)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer_state = checkpoint['optimizer_state_dict']
 
-    # pos_encoder.to(device)
-    # dir_encoder.to(device)
 
+    if args.test:
+        test_nerf(
+            model, pos_encoder, dir_encoder,
+            images, poses, render_poses, hwf, i_split, device, near, far,
+            args
+        )
 
-    train_nerf(
-        model, pos_encoder, dir_encoder,
-        images, poses, render_poses, hwf, i_split, device, near, far,
-        args
-    )
+    else:
+        train_nerf(
+            model, pos_encoder, dir_encoder,
+            images, poses, render_poses, hwf, i_split, device, near, far,
+            args
+        )
 
     # TODO: evaluate trained model
 

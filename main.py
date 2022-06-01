@@ -2,6 +2,7 @@ import argparse
 import loader
 from model import *
 from train2 import train_nerf
+from test import test_nerf
 import torch
 import os
 import numpy as np
@@ -9,6 +10,8 @@ import numpy as np
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 np.random.seed(0)
+torch.manual_seed(0)
+torch.cuda.manual_seed_all(0)
 
 def main():
     parser = argparse.ArgumentParser('BARF')
@@ -32,6 +35,8 @@ def main():
     parser.add_argument('--lr_p_start', type=float, default=1e-3)
     parser.add_argument('--lr_p_end', type=float, default=1e-5)
     parser.add_argument('--white_background', default=False, action='store_true')
+    parser.add_argument('--model_path', type=str, default=None)
+    parser.add_argument('--test', default=False, action='store_true')
 
     args = parser.parse_args()
 
@@ -70,12 +75,25 @@ def main():
 
     # pos_encoder.to(device)
     # dir_encoder.to(device)
+    optimizer_state = None
+    if args.model_path is not None:
+        checkpoint = torch.load(args.model_path)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer_state = checkpoint['optimizer_state_dict']
 
-    pose_params = train_nerf(
-        model, pos_encoder, dir_encoder,
-        images, poses, render_poses, hwf, i_split, device, near, far,
-        args
-    )
+    if args.test:
+        test_nerf(
+            model, pos_encoder, dir_encoder,
+            images, poses, render_poses, hwf, i_split, device, near, far,
+            args
+        )
+
+    else:
+        pose_params = train_nerf(
+            model, pos_encoder, dir_encoder,
+            images, poses, render_poses, hwf, i_split, device, near, far,
+            args
+        )
 
     # TODO: evaluate trained model
 
