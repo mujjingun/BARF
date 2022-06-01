@@ -82,7 +82,7 @@ def expand(M):
 
 
 def train_nerf(model, pos_encoder, dir_encoder,
-               images, poses, render_poses, hwf, i_split, device,
+               images, poses, render_poses, hwf, i_split, device, near, far,
                args):
 
     num_train = len(i_split[0])
@@ -169,7 +169,7 @@ def train_nerf(model, pos_encoder, dir_encoder,
         gt = gt_flatten[selected_pixel_idx]
 
         sampled_points, sampled_directions, lin = sample_points(
-            world_o, selected_d, args.num_points, device
+            world_o, selected_d, args.num_points, device, near, far
         )
 
         # positional encoding
@@ -182,8 +182,8 @@ def train_nerf(model, pos_encoder, dir_encoder,
         # i_step = step
         # if args.full_pos_enc:
         #     i_step = -1
-        color = estimate_color(model, sampled_points, sampled_directions, lin, pos_encoder, dir_encoder,
-                               step if args.coarse_to_fine else -1)
+        color, depth = estimate_color(model, sampled_points, sampled_directions, lin, pos_encoder, dir_encoder,
+                               step if args.coarse_to_fine else -1, args.white_background)
 
         # compute loss
         loss = mse_loss(color, gt)
@@ -224,6 +224,7 @@ def train_nerf(model, pos_encoder, dir_encoder,
             selected_d = world_d_flatten
 
             colors = []
+            depths = []
             total_pixel = hwf[0] * hwf[1]
             batch_size = 8000 // 8
             iter = total_pixel // batch_size
@@ -232,20 +233,31 @@ def train_nerf(model, pos_encoder, dir_encoder,
                     batch_points, batch_directions, batch_lin = sample_points(
                         world_o, selected_d[batch_size * j:batch_size * (j + 1)], args.num_points*8, device
                     )
-                    color = estimate_color(model, batch_points, batch_directions, batch_lin, pos_encoder, dir_encoder,
-                                           step if args.coarse_to_fine else -1)
+                    color, depth = estimate_color(model, batch_points, batch_directions, batch_lin, pos_encoder, dir_encoder,
+                                           step if args.coarse_to_fine else -1, white_background)
                     colors.append(color)
+                    depths.append(depth)
 
             color = torch.cat(colors, 0)
+            depth = torch.cat(depths, 0)
 
             mse = mse_loss(color, gt_flatten)
             psnr = calc_psnr(mse)
             print(f"PSNR : {psnr.item()}")
-            color = color.reshape(hwf[0], hwf[1], 3)
 
-            os.makedirs(f"{args.basedir}/img", exist_ok=True)
-            os.makedirs(f"{args.basedir}/ckpt", exist_ok=True)
-            io.imsave(f"{args.basedir}/img/{step}.png", color.cpu().numpy())
+            gt_im = gt_flatten.reshape(hwf[0],hwf[1],3)
+            color = color.reshape(hwf[0], hwf[1], 3)
+            depth = depth.reshape(hwf[0],hwf[1])
+            concat = torch.cat([gt_im,color],1)
+
+            os.makedirs(f"{args.basedir}/img",exist_ok=True)
+            os.makedirs(f"{args.basedir}/depth",exist_ok=True)
+            os.makedirs(f"{args.basedir}/gt_img",exist_ok=True)
+            os.makedirs(f"{args.basedir}/ckpt",exist_ok=True)
+
+            io.imsave(f"{args.basedir}/gt_img/{step:06d}.png",concat.cpu().numpy())
+            io.imsave(f"{args.basedir}/img/{step:06d}.png",color.cpu().numpy())
+            io.imsave(f"{args.basedir}/depth/{step:06d}.png",depth.cpu().numpy())
             torch.save({
                 'step': step,
                 'model_state_dict': model.state_dict(),
@@ -253,4 +265,4 @@ def train_nerf(model, pos_encoder, dir_encoder,
                 'optimizer_p_state_dict': optimizer_p.state_dict(),
                 'pose_noise': pose_noise,
                 'pose': pose_perturbs
-            }, f"{args.basedir}/ckpt/{step}.tar")
+            }, f"{args.basedir}/ckpt/{step:06d}.tar")

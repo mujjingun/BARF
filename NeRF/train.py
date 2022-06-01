@@ -8,6 +8,7 @@ import math
 import os
 
 mse_loss = lambda output, gt : torch.mean((output-gt)**2)
+calc_psnr = lambda mse : -10*torch.log10(mse)
 
 def train_nerf(model, pos_encoder, dir_encoder,
                images, poses, render_poses, hwf, i_split, device, near, far,
@@ -55,7 +56,7 @@ def train_nerf(model, pos_encoder, dir_encoder,
         # sampled_points = pos_encoder.encode(sampled_points,step)
         # sampled_directions = dir_encoder.encode(sampled_directions,step)
 
-        color = estimate_color(model, sampled_points, sampled_directions, lin, pos_encoder, dir_encoder)
+        color, depth = estimate_color(model, sampled_points, sampled_directions, lin, pos_encoder, dir_encoder, args.white_background)
 
         # TODO: compute loss
         optimizer.zero_grad()
@@ -82,6 +83,7 @@ def train_nerf(model, pos_encoder, dir_encoder,
             )
 
             colors = []
+            depths = []
             total_pixel = hwf[0]*hwf[1]
             batch_size = 8000
             iter = total_pixel//batch_size
@@ -90,17 +92,35 @@ def train_nerf(model, pos_encoder, dir_encoder,
                     batch_points = sampled_points[batch_size*j:batch_size*(j+1)]
                     batch_directions = sampled_directions[batch_size*j:batch_size*(j+1)]
                     batch_lin = lin[batch_size*j:batch_size*(j+1)]
-                    color = estimate_color(model, batch_points, batch_directions, batch_lin, pos_encoder, dir_encoder)
+                    color, depth = estimate_color(model, batch_points, batch_directions, batch_lin, pos_encoder, dir_encoder, args.white_background)
                     colors.append(color)
+                    depths.append(depth)
 
             color = torch.cat(colors,0)
+            depth = torch.cat(depths,0)
+
+            mse = mse_loss(color,gt_flatten)
+            psnr = calc_psnr(mse)
+
+            print(f"[Image index {train_idx}] PSNR : {psnr.item()}")
+
+            gt_im = gt_flatten.reshape(hwf[0],hwf[1],3)
+            
 
             color = color.reshape(hwf[0],hwf[1],3)
+            depth = depth.reshape(hwf[0],hwf[1])
+
+            concat = torch.cat([gt_im,color],1)
             os.makedirs(f"{args.basedir}/img",exist_ok=True)
+            os.makedirs(f"{args.basedir}/depth",exist_ok=True)
+            os.makedirs(f"{args.basedir}/gt_img",exist_ok=True)
             os.makedirs(f"{args.basedir}/ckpt",exist_ok=True)
-            io.imsave(f"{args.basedir}/img/{step}.png",color.cpu().numpy())
+
+            io.imsave(f"{args.basedir}/gt_img/{step:06d}.png",concat.cpu().numpy())
+            io.imsave(f"{args.basedir}/img/{step:06d}.png",color.cpu().numpy())
+            io.imsave(f"{args.basedir}/depth/{step:06d}.png",depth.cpu().numpy())
             torch.save({
                     'step': step,
                     'model_state_dict' : model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
-                }, f"{args.basedir}/ckpt/{step}.tar")
+                }, f"{args.basedir}/ckpt/{step:06d}.tar")

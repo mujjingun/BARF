@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 
 
-def estimate_color(model, sampled_points, sampled_directions, lin, pos_encoder, dir_encoder, step):
+def estimate_color(model, sampled_points, sampled_directions, lin, pos_encoder, dir_encoder, step, white_background):
     """
     estimate color based on the NeRF model and the sampled points
     :param model: NeRFModel
@@ -74,4 +74,13 @@ def estimate_color(model, sampled_points, sampled_directions, lin, pos_encoder, 
 
     color = torch.sum(w.unsqueeze(2) * color, dim=1)
 
-    return color
+    weight_sum = torch.sum(w, 1)
+
+
+    #From NeRF-pytorch code repository
+    #https://github.com/yenchenlin/nerf-pytorch/blob/master/run_nerf.py
+    depth = torch.sum(w * lin, 1)
+    if white_background:
+        color = color + (1.-weight_sum.unsqueeze(1))
+
+    return color, depth

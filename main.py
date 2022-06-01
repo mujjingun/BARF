@@ -31,6 +31,7 @@ def main():
     parser.add_argument('--lr_f_end', type=float, default=1e-4)
     parser.add_argument('--lr_p_start', type=float, default=1e-3)
     parser.add_argument('--lr_p_end', type=float, default=1e-5)
+    parser.add_argument('--white_background', default=False, action='store_true')
 
     args = parser.parse_args()
 
@@ -39,6 +40,12 @@ def main():
     images, poses, render_poses, hwf, i_split = loader.load_dataset(
         args.dataset_type, args.datadir, args.half_res, args.testskip
     )
+
+    near = 2. if args.dataset_type == 'blender' else 0.1
+    far = 6. if args.dataset_type == 'blender' else 1.
+
+    if args.white_background:
+        images = images[..., :3] * images[..., -1:] + (1. - images[..., -1:])
 
     if images.shape[-1] == 4:
         images = images[...,:3]
@@ -66,7 +73,7 @@ def main():
 
     pose_params = train_nerf(
         model, pos_encoder, dir_encoder,
-        images, poses, render_poses, hwf, i_split, device,
+        images, poses, render_poses, hwf, i_split, device, near, far,
         args
     )
 

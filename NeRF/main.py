@@ -9,6 +9,8 @@ import numpy as np
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 np.random.seed(0)
+torch.manual_seed(0)
+torch.cuda.manual_seed_all(0)
 
 def main():
     parser = argparse.ArgumentParser('BARF')
@@ -24,6 +26,7 @@ def main():
     parser.add_argument('--basedir', type=str, default='test_result')
     parser.add_argument('--lr_start', type=float, default=5e-4)
     parser.add_argument('--lr_end', type=float, default=1e-4)
+    parser.add_argument('--white_background', default=False, action='store_true')
 
     args = parser.parse_args()
 
@@ -37,9 +40,8 @@ def main():
     far = 6. if args.dataset_type == 'blender' else 1.
 
 
-    white_bkgd = False
-    if white_bkgd:
-        # white background
+
+    if args.white_background:
         images = images[..., :3] * images[..., -1:] + (1. - images[..., -1:])
 
 
