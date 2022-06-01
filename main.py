@@ -7,11 +7,12 @@ import torch
 import os
 import numpy as np
 
-os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 np.random.seed(0)
 torch.manual_seed(0)
 torch.cuda.manual_seed_all(0)
+
 
 def main():
     parser = argparse.ArgumentParser('BARF')
@@ -79,12 +80,16 @@ def main():
     if args.model_path is not None:
         checkpoint = torch.load(args.model_path)
         model.load_state_dict(checkpoint['model_state_dict'])
-        optimizer_state = checkpoint['optimizer_state_dict']
+        optimizer_f_state = checkpoint['optimizer_f_state_dict']
+        optimizer_p_state = checkpoint['optimizer_p_state_dict']
+        pose_noise = checkpoint['pose_noise']
+        pose_perturbs = checkpoint['pose']
 
     if args.test:
         test_nerf(
             model, pos_encoder, dir_encoder,
             images, poses, render_poses, hwf, i_split, device, near, far,
+            pose_noise, pose_perturbs,
             args
         )
 
@@ -94,9 +99,6 @@ def main():
             images, poses, render_poses, hwf, i_split, device, near, far,
             args
         )
-
-    # TODO: evaluate trained model
-
 
 
 if __name__ == "__main__":

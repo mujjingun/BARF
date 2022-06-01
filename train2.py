@@ -7,84 +7,15 @@ from tqdm import tqdm, trange
 import os
 from skimage import io
 import pytorch3d.transforms
+from utils import *
 
 mse_loss = lambda output, gt: torch.mean((output - gt) ** 2)
-calc_psnr = lambda mse : -10*torch.log10(mse)
-
-
-def procrustes_analysis(X0, X1):  # [N, 3]
-    # translation
-    mu0 = X0.mean(dim=0, keepdim=True)
-    mu1 = X1.mean(dim=0, keepdim=True)
-    X0 = X0 - mu0
-    X1 = X1 - mu1
-
-    # scale
-    s0 = (X0**2).sum(dim=-1).mean().sqrt()  # TODO replace with std
-    s1 = (X1**2).sum(dim=-1).mean().sqrt()
-    X0 = X0 / s0
-    X1 = X1 / s1
-
-    # obtain rotation matrix
-    U, S, Vh = np.linalg.svd((X0.T @ X1).double().cpu().numpy())
-    R = U @ Vh
-    if np.linalg.det(R) < 0:
-        R[2] *= -1
-    R = torch.tensor(R, device=X0.device, dtype=torch.float32)
-    # align X1 to X0: X1to0 = (X1-t1)/s1@R.t()*s0+t0
-    return mu0[0], mu1[0], s0, s1, R
-
-
-@torch.no_grad()
-def pose_distance(truth, perturbs):
-    # obtain camera positions
-    truth, perturbs = invert(truth), invert(perturbs)  # (N, 3, 4)
-
-    origin = torch.tensor([[0., 0., 0., 1.]], device=truth.device).unsqueeze(-1)
-    truth_origin = (truth @ origin).squeeze(2)
-    perturbs_origin = (perturbs @ origin).squeeze(2)  # (N, 3)
-
-    # perform procrustes analysis
-    truth_mu, perturbs_mu, truth_scale, perturbs_scale, rotation = procrustes_analysis(truth_origin, perturbs_origin)
-
-    # align the perturbed origin to ground truth
-    aligned_origin = ((perturbs_origin - perturbs_mu) / perturbs_scale) @ rotation.T * truth_scale + truth_mu  # (N, 3)
-    R_aligned = perturbs[..., :3] @ rotation.T  # (N, 3, 3)
-
-    trans_dist = (truth_origin - aligned_origin).norm(dim=-1).mean()
-    angle_dist = pytorch3d.transforms.so3_relative_angle(truth[..., :3], R_aligned).mean(0)
-
-    print(f"pose error: trans = {trans_dist.item():.4f} / "
-          f"angle = {math.degrees(angle_dist.item()):.4f}")
-
-
-def to_matrix(R, t):
-    R = R.float()
-    t = t.float()
-    pose = torch.cat([R, t[..., None]], dim=-1)  # [...,3,4]
-    return pose
-
-
-def invert(pose):
-    # invert a camera pose
-    R, t = pose[..., :3], pose[..., 3:]
-    R_inv = R.transpose(-1, -2)  # TODO replace with .mT
-    t_inv = (-R_inv @ t)[..., 0]
-    pose_inv = to_matrix(R=R_inv, t=t_inv)
-    return pose_inv
-
-
-def expand(M):
-    return torch.cat([
-        M,
-        torch.tensor([[[0., 0., 0., 1.]]], device=M.device).expand(M.shape[0], -1, -1)
-    ], dim=1)
+calc_psnr = lambda mse: -10 * torch.log10(mse)
 
 
 def train_nerf(model, pos_encoder, dir_encoder,
                images, poses, render_poses, hwf, i_split, device, near, far,
                args):
-
     num_train = len(i_split[0])
     print(num_train)
 
@@ -128,21 +59,18 @@ def train_nerf(model, pos_encoder, dir_encoder,
     )
 
     loss_running_avg = None
-    
 
     pbar = tqdm(range(args.n_steps))
     for step in pbar:
         optimizer_f.zero_grad()
         optimizer_p.zero_grad()
 
-        
         train_idx = np.random.choice(i_train, 1)
 
         # print("="*100)
         # print("train index is", train_idx)
         # print("(before step) pose perturb at 0 is", pose_perturbs[0])
         # sample points on ray
-        
 
         train_im = images[train_idx]  # H x W x 3
 
@@ -183,7 +111,7 @@ def train_nerf(model, pos_encoder, dir_encoder,
         # if args.full_pos_enc:
         #     i_step = -1
         color, depth = estimate_color(model, sampled_points, sampled_directions, lin, pos_encoder, dir_encoder,
-                               step if args.coarse_to_fine else -1, args.white_background)
+                                      step if args.coarse_to_fine else -1, args.white_background)
 
         # compute loss
         loss = mse_loss(color, gt)
@@ -231,10 +159,11 @@ def train_nerf(model, pos_encoder, dir_encoder,
             with torch.no_grad():
                 for j in trange(iter):
                     batch_points, batch_directions, batch_lin = sample_points(
-                        world_o, selected_d[batch_size * j:batch_size * (j + 1)], args.num_points*8, device
+                        world_o, selected_d[batch_size * j:batch_size * (j + 1)], args.num_points * 8, device
                     )
-                    color, depth = estimate_color(model, batch_points, batch_directions, batch_lin, pos_encoder, dir_encoder,
-                                           step if args.coarse_to_fine else -1, white_background)
+                    color, depth = estimate_color(model, batch_points, batch_directions, batch_lin,
+                                                  pos_encoder, dir_encoder,
+                                                  step if args.coarse_to_fine else -1, args.white_background)
                     colors.append(color)
                     depths.append(depth)
 
@@ -245,19 +174,19 @@ def train_nerf(model, pos_encoder, dir_encoder,
             psnr = calc_psnr(mse)
             print(f"PSNR : {psnr.item()}")
 
-            gt_im = gt_flatten.reshape(hwf[0],hwf[1],3)
+            gt_im = gt_flatten.reshape(hwf[0], hwf[1], 3)
             color = color.reshape(hwf[0], hwf[1], 3)
-            depth = depth.reshape(hwf[0],hwf[1])
-            concat = torch.cat([gt_im,color],1)
+            depth = depth.reshape(hwf[0], hwf[1])
+            concat = torch.cat([gt_im, color], 1)
 
-            os.makedirs(f"{args.basedir}/img",exist_ok=True)
-            os.makedirs(f"{args.basedir}/depth",exist_ok=True)
-            os.makedirs(f"{args.basedir}/gt_img",exist_ok=True)
-            os.makedirs(f"{args.basedir}/ckpt",exist_ok=True)
+            os.makedirs(f"{args.basedir}/img", exist_ok=True)
+            os.makedirs(f"{args.basedir}/depth", exist_ok=True)
+            os.makedirs(f"{args.basedir}/gt_img", exist_ok=True)
+            os.makedirs(f"{args.basedir}/ckpt", exist_ok=True)
 
-            io.imsave(f"{args.basedir}/gt_img/{step:06d}.png",concat.cpu().numpy())
-            io.imsave(f"{args.basedir}/img/{step:06d}.png",color.cpu().numpy())
-            io.imsave(f"{args.basedir}/depth/{step:06d}.png",depth.cpu().numpy())
+            io.imsave(f"{args.basedir}/gt_img/{step:06d}.png", concat.cpu().numpy())
+            io.imsave(f"{args.basedir}/img/{step:06d}.png", color.cpu().numpy())
+            io.imsave(f"{args.basedir}/depth/{step:06d}.png", depth.cpu().numpy())
             torch.save({
                 'step': step,
                 'model_state_dict': model.state_dict(),
