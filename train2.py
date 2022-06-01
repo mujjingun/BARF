@@ -130,7 +130,7 @@ def train_nerf(model, pos_encoder, dir_encoder,
     loss_running_avg = None
     
 
-    pbar = tqdm(range(args.n_steps))
+    pbar = tqdm(range(args.n_steps + 1))
     for step in pbar:
         optimizer_f.zero_grad()
         optimizer_p.zero_grad()
