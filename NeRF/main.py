@@ -22,6 +22,8 @@ def main():
     parser.add_argument('--pos_enc_L', type=int, default=10)
     parser.add_argument('--dir_enc_L', type=int, default=4)
     parser.add_argument('--basedir', type=str, default='test_result')
+    parser.add_argument('--lr_start', type=float, default=5e-4)
+    parser.add_argument('--lr_end', type=float, default=1e-4)
 
     args = parser.parse_args()
 
@@ -30,6 +32,9 @@ def main():
     images, poses, render_poses, hwf, i_split = loader.load_dataset(
         args.dataset_type, args.datadir, args.half_res, args.testskip
     )
+
+    near = 2. if args.dataset_type == 'blender' else 0.1
+    far = 6. if args.dataset_type == 'blender' else 1.
 
 
     white_bkgd = False
@@ -61,7 +66,7 @@ def main():
 
     train_nerf(
         model, pos_encoder, dir_encoder,
-        images, poses, render_poses, hwf, i_split, device,
+        images, poses, render_poses, hwf, i_split, device, near, far,
         args
     )
 

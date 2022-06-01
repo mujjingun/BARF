@@ -10,7 +10,7 @@ import os
 mse_loss = lambda output, gt : torch.mean((output-gt)**2)
 
 def train_nerf(model, pos_encoder, dir_encoder,
-               images, poses, render_poses, hwf, i_split, device,
+               images, poses, render_poses, hwf, i_split, device, near, far,
                args):
 
     optimizer = torch.optim.Adam(
@@ -19,7 +19,7 @@ def train_nerf(model, pos_encoder, dir_encoder,
         betas=(0.9,0.999)
     )
 
-    lr_f_start, lr_f_end = 5e-4, 5e-5
+    lr_f_start, lr_f_end = args.lr_start, args.lr_end
 
     pbar = tqdm(range(args.n_steps))
     for step in pbar:
@@ -44,7 +44,7 @@ def train_nerf(model, pos_encoder, dir_encoder,
         gt = gt_flatten[selected_pixel_idx]
 
         sampled_points, sampled_directions, lin = sample_points(
-            world_o, selected_d, args.num_points,device
+            world_o, selected_d, args.num_points,device, near, far
         )
 
 
@@ -78,7 +78,7 @@ def train_nerf(model, pos_encoder, dir_encoder,
             selected_d = world_d_flatten
 
             sampled_points, sampled_directions, lin = sample_points(
-                world_o, selected_d, args.num_points, device
+                world_o, selected_d, args.num_points, device, near, far
             )
 
             colors = []
