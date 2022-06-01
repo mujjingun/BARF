@@ -54,7 +54,7 @@ def main():
         images = images[..., :3] * images[..., -1:] + (1. - images[..., -1:])
 
     if images.shape[-1] == 4:
-        images = images[...,:3]
+        images = images[...,:3] * images[..., -1:]
 
 
     pos_encoding = PosEncoding(3,L=args.pos_enc_L,lower_bound=args.c2f_begin,upper_bound=args.c2f_end)

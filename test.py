@@ -64,20 +64,16 @@ def test_nerf(model, pos_encoder, dir_encoder,
 
         selected_d = world_d_flatten
 
-        sampled_points, sampled_directions, lin = sample_points(
-            world_o, selected_d, args.num_points, device, near, far
-        )
-
         colors = []
         depths = []
         total_pixel = hwf[0] * hwf[1]
-        batch_size = 8000
+        batch_size = 8000 // (args.num_points // 256)
         iter = total_pixel // batch_size
 
         for j in trange(iter):
-            batch_points = sampled_points[batch_size * j:batch_size * (j + 1)]
-            batch_directions = sampled_directions[batch_size * j:batch_size * (j + 1)]
-            batch_lin = lin[batch_size * j:batch_size * (j + 1)]
+            batch_points, batch_directions, batch_lin = sample_points(
+                world_o, selected_d[batch_size * j:batch_size * (j + 1)], args.num_points, device
+            )
             color, depth = estimate_color(model, batch_points, batch_directions, batch_lin, pos_encoder, dir_encoder,
                                           -1, args.white_background)
             colors.append(color)
