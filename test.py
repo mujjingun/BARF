@@ -44,13 +44,13 @@ def test_nerf(model, pos_encoder, dir_encoder,
 
     origin = torch.tensor([[0., 0., 0., 1.]], device=device).unsqueeze(-1)
     test_origin = (test_poses[:, :3, :] @ origin).squeeze(2)
-    aligned_origin = ((test_origin - perturbs_mu) / perturbs_scale) @ rotation.T * truth_scale + truth_mu  # (N, 3)
+    aligned_origin = ((test_origin - truth_mu) / truth_scale) @ rotation * perturbs_scale + perturbs_mu  # (N, 3)
 
     test_poses_inv = invert(test_poses[:, :3, :])
-    R_aligned = test_poses_inv[..., :3] @ rotation.T
+    R_aligned = test_poses_inv[..., :3] @ rotation
     t_aligned = (-R_aligned @ aligned_origin[..., None])[..., 0]
     test_poses_inv = to_matrix(R_aligned, t_aligned)
-    #test_poses = expand(invert(test_poses_inv))
+    test_poses = expand(invert(test_poses_inv))
 
     for idx in i_test:
         test_im = images[idx]
