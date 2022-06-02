@@ -40,8 +40,8 @@ def train_nerf(model, pos_encoder, dir_encoder,
         torch.zeros((train_poses.shape[0], 6), device=device)
     )
     calc_poses = (train_poses @
-                  pytorch3d.transforms.se3_exp_map(pose_noise).mT @
-                  pytorch3d.transforms.se3_exp_map(pose_perturbs).mT)
+                  pytorch3d.transforms.se3_exp_map(pose_noise).transpose(-2,-1) @
+                  pytorch3d.transforms.se3_exp_map(pose_perturbs).transpose(-2,-1))
     pose_distance(train_poses, calc_poses)
 
     lr_f_start, lr_f_end = args.lr_f_start, args.lr_f_end
@@ -78,12 +78,19 @@ def train_nerf(model, pos_encoder, dir_encoder,
 
         # c2w = poses[train_idx] @ to_matrix(pose_perturbs[train_idx])
         c2w = (train_poses[train_idx] @
-               pytorch3d.transforms.se3_exp_map(pose_noise)[train_idx].mT @
-               pytorch3d.transforms.se3_exp_map(pose_perturbs)[train_idx].mT)
+               pytorch3d.transforms.se3_exp_map(pose_noise)[train_idx].transpose(-2,-1) @
+               pytorch3d.transforms.se3_exp_map(pose_perturbs)[train_idx].transpose(-2,-1))
         c2w = invert(c2w)
         c2w = c2w.type(torch.float32)
 
         world_o, world_d = get_rays(hwf, c2w)  # world_o : (3), world_d (H x W x 3)
+
+        H = world_d.shape[0]
+        W = world_d.shape[1]
+
+        if step <= 500:
+            world_d = world_d[int(0.25*H):int(0.75*H), int(0.25*W):int(0.75*W)]
+            train_im = train_im[:,int(0.25*H):int(0.75*H), int(0.25*W):int(0.75*W)]
 
         world_o = world_o.to(device)
         world_d = world_d.to(device)
@@ -141,8 +148,8 @@ def train_nerf(model, pos_encoder, dir_encoder,
         if (step % 1000 == 0) and (step != 0):
             print(pose_grad)
             calc_poses = (train_poses @
-                          pytorch3d.transforms.se3_exp_map(pose_noise).mT @
-                          pytorch3d.transforms.se3_exp_map(pose_perturbs).mT)
+                          pytorch3d.transforms.se3_exp_map(pose_noise).transpose(-2,-1) @
+                          pytorch3d.transforms.se3_exp_map(pose_perturbs).transpose(-2,-1))
             pose_distance(train_poses, calc_poses)
 
         if (step % 8000 == 0) and (step != 0):

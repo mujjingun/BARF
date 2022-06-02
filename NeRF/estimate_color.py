@@ -48,7 +48,6 @@ def estimate_color(model, sampled_points, sampled_directions, lin, pos_encoder, 
 
     w = T*alpha #[num_rays, num_point]
 
-
     color = torch.sum(w.unsqueeze(2) * color, dim=1)
 
     weight_sum = torch.sum(w, 1)

@@ -33,6 +33,13 @@ def train_nerf(model, pos_encoder, dir_encoder,
 
         world_o, world_d = get_rays(hwf,c2w) # world_o : (3), world_d (H x W x 3)
 
+        H = world_d.shape[0]
+        W = world_d.shape[1]
+
+        if step <= 500:
+            world_d = world_d[int(0.25*H):int(0.75*H), int(0.25*W):int(0.75*W)]
+            train_im = train_im[:,int(0.25*H):int(0.75*H), int(0.25*W):int(0.75*W)]
+
         world_o = world_o.to(device)
         world_d = world_d.to(device)
 
