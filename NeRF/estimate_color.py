@@ -50,12 +50,12 @@ def estimate_color(model, sampled_points, sampled_directions, lin, pos_encoder, 
 
     color = torch.sum(w.unsqueeze(2) * color, dim=1)
 
-    weight_sum = torch.sum(w, 1)
-
 
     #From NeRF-pytorch code repository
     #https://github.com/yenchenlin/nerf-pytorch/blob/master/run_nerf.py
+    weight_sum = torch.sum(w, 1)
     depth = torch.sum(w * lin, 1)
+    depth = 1./torch.max(1e-8 * torch.ones_like(depth), depth / torch.sum(w, -1))
     if white_background:
         color = color + (1.-weight_sum.unsqueeze(1))
 
