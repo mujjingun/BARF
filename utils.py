@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import pytorch3d.transforms
+import torch.nn.functional as F
 import math
 
 
@@ -53,11 +54,11 @@ def expand(M):
 @torch.no_grad()
 def pose_distance(truth, perturbs):
     # obtain camera positions
-    truth, perturbs = invert(truth), invert(perturbs)  # (N, 3, 4)
+    # truth, perturbs = invert(truth), invert(perturbs)  # (N, 3, 4)
 
-    origin = torch.tensor([[0., 0., 0., 1.]], device=truth.device).unsqueeze(-1)
-    truth_origin = (truth @ origin).squeeze(2)
-    perturbs_origin = (perturbs @ origin).squeeze(2)  # (N, 3)
+    origin = torch.tensor([[[0., 0., 0., 1.]]], device=truth.device)
+    truth_origin = (origin @ invert(truth).mT)[:,0]
+    perturbs_origin = (origin @ invert(perturbs).mT)[:,0]  # (N, 3)
 
     # perform procrustes analysis
     truth_mu, perturbs_mu, truth_scale, perturbs_scale, rotation = procrustes_analysis(truth_origin, perturbs_origin)
@@ -65,9 +66,17 @@ def pose_distance(truth, perturbs):
     # align the perturbed origin to ground truth
     aligned_origin = ((perturbs_origin - perturbs_mu) / perturbs_scale) @ rotation.T * truth_scale + truth_mu  # (N, 3)
     R_aligned = perturbs[..., :3] @ rotation.T  # (N, 3, 3)
+    t_aligned = (-R_aligned @ aligned_origin[...,None])[...,0]
+    aligned_mat = to_matrix(R_aligned, t_aligned)
 
     trans_dist = (truth_origin - aligned_origin).norm(dim=-1).mean()
-    angle_dist = pytorch3d.transforms.so3_relative_angle(truth[..., :3], R_aligned).mean(0)
+
+    direc = torch.tensor([[[0., 0., 1., 0.]]], device=truth.device)
+    truth_direc = (direc @ invert(truth).mT)[:, 0]
+    aligned_direc = (direc @ invert(aligned_mat).mT)[:, 0]  # (N, 3)
+
+    angle_dist = torch.rad2deg(torch.acos(F.cosine_similarity(truth_direc.double(), aligned_direc.double())))
+    angle_dist = angle_dist.mean(0)
 
     print(f"pose error: trans = {trans_dist.item():.4f} / "
-          f"angle = {math.degrees(angle_dist.item()):.4f}")
+          f"angle = {angle_dist.item():.4f}")

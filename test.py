@@ -41,6 +41,7 @@ def test_nerf(model, pos_encoder, dir_encoder,
                   pytorch3d.transforms.se3_exp_map(pose_noise).mT @
                   pytorch3d.transforms.se3_exp_map(pose_perturbs).mT)
     truth_mu, perturbs_mu, truth_scale, perturbs_scale, rotation = get_align(train_poses_inv, calc_poses)
+    pose_distance(train_poses_inv, calc_poses)
 
     origin = torch.tensor([[0., 0., 0., 1.]], device=device).unsqueeze(-1)
     test_origin = (test_poses[:, :3, :] @ origin).squeeze(2)
