@@ -43,7 +43,7 @@ def main():
 
     os.makedirs(f"{args.basedir}",exist_ok=True)
 
-    images, poses, render_poses, hwf, i_split = loader.load_dataset(
+    images, poses, render_poses, hwf, i_split, bounds = loader.load_dataset(
         args.dataset_type, args.datadir, args.half_res, args.testskip
     )
 
@@ -88,7 +88,7 @@ def main():
     if args.test:
         test_nerf(
             model, pos_encoder, dir_encoder,
-            images, poses, render_poses, hwf, i_split, device, near, far,
+            images, poses, render_poses, hwf, i_split, device, near, far, bounds,
             pose_noise, pose_perturbs,
             args
         )
@@ -96,7 +96,7 @@ def main():
     else:
         pose_params = train_nerf(
             model, pos_encoder, dir_encoder,
-            images, poses, render_poses, hwf, i_split, device, near, far,
+            images, poses, render_poses, hwf, i_split, device, near, far, bounds,
             args
         )
 

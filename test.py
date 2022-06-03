@@ -28,7 +28,7 @@ def get_align(truth, perturbs):
 
 @torch.no_grad()
 def test_nerf(model, pos_encoder, dir_encoder,
-              images, poses, render_poses, hwf, i_split, device, near, far,
+              images, poses, render_poses, hwf, i_split, device, near, far, bounds,
               pose_noise, pose_perturbs,
               args):
     i_train, i_val, i_test = i_split

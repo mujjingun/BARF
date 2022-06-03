@@ -14,7 +14,7 @@ def load_dataset(dataset_type, basedir, half_res=False, testskip=1):
     :param basedir:
     :param half_res:
     :param testskip:
-    :return: a tuple (images, poses, render_poses, hwf, i_split)
+    :return: a tuple (images, poses, render_poses, hwf, i_split, bounds)
     """
     if dataset_type == "blender":
         return load_blender(basedir, half_res, testskip)
@@ -73,7 +73,7 @@ def load_llff(basedir, half_res, testskip, bound_factor=0.75):
         [n_train + i for i in range(n_test)]  # test
     ]
 
-    return images, poses, render_poses, hwf, i_split
+    return images, poses, render_poses, hwf, i_split, bounds
 
 
 def load_blender(basedir, half_res, testskip):
@@ -127,7 +127,7 @@ def load_blender(basedir, half_res, testskip):
     # white background
     # images = images[..., :3] * images[..., -1:] + (1. - images[..., -1:])
 
-    return images, poses, render_poses, hwf, i_split
+    return images, poses, render_poses, hwf, i_split, None
 
 
 def translate_z(distance):

@@ -14,7 +14,7 @@ calc_psnr = lambda mse: -10 * torch.log10(mse)
 
 
 def train_nerf(model, pos_encoder, dir_encoder,
-               images, poses, render_poses, hwf, i_split, device, near, far,
+               images, poses, render_poses, hwf, i_split, device, near, far, bounds,
                args):
     num_train = len(i_split[0])
     print(num_train)
