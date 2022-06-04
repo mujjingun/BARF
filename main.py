@@ -3,6 +3,7 @@ import loader
 from model import *
 from train2 import train_nerf
 from test import test_nerf
+from load_llff import *
 import torch
 import os
 import numpy as np
@@ -38,6 +39,7 @@ def main():
     parser.add_argument('--white_background', default=False, action='store_true')
     parser.add_argument('--model_path', type=str, default=None)
     parser.add_argument('--test', default=False, action='store_true')
+    parser.add_argument('--auto_load', default=False, action='store_true')
 
     args = parser.parse_args()
 
@@ -47,8 +49,42 @@ def main():
         args.dataset_type, args.datadir, args.half_res, args.testskip
     )
 
-    near = 2. if args.dataset_type == 'blender' else 0.1
-    far = 6. if args.dataset_type == 'blender' else 1.
+    near = 2. if args.dataset_type == 'blender' else np.ndarray.min(bounds)*0.9
+    far = 6. if args.dataset_type == 'blender' else np.ndarray.max(bounds)*1.
+
+    if args.dataset_type == 'llff':
+        llff_holdout = 8
+        images, poses, bds, render_poses, i_test = load_llff_data(args.datadir, llff_holdout,
+                                                                    recenter=True, bd_factor=.75,
+                                                                    spherify=False)
+
+        print(poses.shape)
+        hwf = poses[0,:3,-1]
+        poses = poses[:,:3,:4]
+        print('Loaded llff', images.shape, render_poses.shape, hwf, args.datadir)
+        if not isinstance(i_test, list):
+            i_test = [i_test]
+
+        print('Auto LLFF holdout,', llff_holdout)
+        i_test = np.arange(images.shape[0])[::llff_holdout]
+
+        i_val = i_test
+        i_train = np.array([i for i in np.arange(int(images.shape[0])) if (i not in i_test and i not in i_val)])
+
+        print('DEFINING BOUNDS')
+        near = np.ndarray.min(bds) * .9
+        far = np.ndarray.max(bds) * 1.
+
+        i_split = [i_train, i_val, i_test]
+        print(i_train)
+
+    print(images.shape)
+    print(poses.shape)
+    print(near,far)
+
+    H, W, focal = hwf
+    H, W = int(H), int(W)
+    hwf = [H, W, focal]
 
     if args.white_background:
         images = images[..., :3] * images[..., -1:] + (1. - images[..., -1:])
@@ -84,6 +120,15 @@ def main():
         optimizer_p_state = checkpoint['optimizer_p_state_dict']
         pose_noise = checkpoint['pose_noise']
         pose_perturbs = checkpoint['pose']
+    
+    if args.auto_load:
+        checkpoint = torch.load(os.path.join(args.basedir,"ckpt","200000.tar"))
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer_f_state = checkpoint['optimizer_f_state_dict']
+        optimizer_p_state = checkpoint['optimizer_p_state_dict']
+        pose_noise = checkpoint['pose_noise']
+        pose_perturbs = checkpoint['pose']
+
 
     if args.test:
         test_nerf(

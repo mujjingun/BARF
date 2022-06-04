@@ -20,6 +20,7 @@ def train_nerf(model, pos_encoder, dir_encoder,
     print(num_train)
 
     i_train = i_split[0]
+    print(i_train)
 
     # poses = torch.tensor(poses, dtype=torch.float32, device=device)
     # train_poses = poses[:num_train]
@@ -32,14 +33,17 @@ def train_nerf(model, pos_encoder, dir_encoder,
     # train_poses[:,:3,3] = train_poses_zeros
     train_poses = invert(train_poses[:, :3, :])
 
-    pose_noise = torch.normal(
-        mean=torch.zeros((train_poses.shape[0], 6)),
-        std=torch.ones((train_poses.shape[0], 6)) * 0.15).to(device)
+    # pose_noise = torch.normal(mean=torch.zeros((train_poses.shape[0], 6)),std=torch.ones((train_poses.shape[0], 6)) * 0.15).to(device)
+    pose_noise = torch.normal(mean=0,std=0.15, size=(train_poses.shape[0],6)).to(device)
 
     base_train_poses = (train_poses @
                         pytorch3d.transforms.se3_exp_map(pose_noise).transpose(-2,-1))
     if args.dataset_type == 'llff':
         base_train_poses.fill_(0.0)
+        base_train_poses[...,0,0] = 1.0
+        base_train_poses[...,1,1] = 1.0
+        base_train_poses[...,2,2] = 1.0
+        print(base_train_poses[0])
 
     pose_perturbs = torch.nn.Parameter(
         torch.zeros((train_poses.shape[0], 6), device=device)

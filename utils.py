@@ -57,8 +57,8 @@ def pose_distance(truth, perturbs):
     # truth, perturbs = invert(truth), invert(perturbs)  # (N, 3, 4)
 
     origin = torch.tensor([[[0., 0., 0., 1.]]], device=truth.device)
-    truth_origin = (origin @ invert(truth).mT)[:,0]
-    perturbs_origin = (origin @ invert(perturbs).mT)[:,0]  # (N, 3)
+    truth_origin = (origin @ invert(truth).transpose(-1, -2))[:,0]
+    perturbs_origin = (origin @ invert(perturbs).transpose(-1, -2))[:,0]  # (N, 3)
 
     # perform procrustes analysis
     truth_mu, perturbs_mu, truth_scale, perturbs_scale, rotation = procrustes_analysis(truth_origin, perturbs_origin)
@@ -72,8 +72,8 @@ def pose_distance(truth, perturbs):
     trans_dist = (truth_origin - aligned_origin).norm(dim=-1).mean()
 
     direc = torch.tensor([[[0., 0., 1., 0.]]], device=truth.device)
-    truth_direc = (direc @ invert(truth).mT)[:, 0]
-    aligned_direc = (direc @ invert(aligned_mat).mT)[:, 0]  # (N, 3)
+    truth_direc = (direc @ invert(truth).transpose(-1, -2))[:, 0]
+    aligned_direc = (direc @ invert(aligned_mat).transpose(-1, -2))[:, 0]  # (N, 3)
 
     angle_dist = torch.rad2deg(torch.acos(F.cosine_similarity(truth_direc.double(), aligned_direc.double())))
     angle_dist = angle_dist.mean(0)
