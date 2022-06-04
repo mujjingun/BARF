@@ -77,27 +77,25 @@ class PosEncoding:
     def ret_encode_dim(self):
         return self.encode_dim
 
-    def encode(self,inputs,epoch):
+    def encode(self, inputs, epoch):
+        # inputs: (batch, 3)
+        ll = torch.zeros(inputs.shape[0], inputs.shape[1] * self.L * 2, device=inputs.device)
+
+        range_L = torch.arange(self.L, device=inputs.device)
+        coeff = math.pi * (2 ** range_L)[None, :, None]  # (1, L, 1)
+        cos = torch.cos(coeff * inputs[:, None, :])
+        sin = torch.sin(coeff * inputs[:, None, :])  # (batch, L, 3)
+        ll_view = ll.view(inputs.shape[0], self.L, 2, inputs.shape[1])  # (batch, L+1, 2, 3)
+        ll_view[:, :, 0, :] = cos
+        ll_view[:, :, 1, :] = sin
+
         if (epoch == -1) or (epoch > self.upper_bound): # not use corase-to-fine positional encoding
-            return torch.cat([fn(inputs) for fn in self.pe_fn], -1)
-        else: # use coarse-to-fine positional encoding
-            ratio = min(max((epoch-self.lower_bound)/(self.upper_bound - self.lower_bound), 0), 1)
-            alpha = ratio*self.L
-            ll = [self.pe_fn[0](inputs)]
-            for i in range(self.L):
-                cos_fn = self.pe_fn[2*i+1]
-                sin_fn = self.pe_fn[2*i+2]
-                if alpha >= i+1:
-                    ll.append(cos_fn(inputs))
-                    ll.append(sin_fn(inputs))
-                elif alpha < i:
-                    ll.append(0*cos_fn(inputs))
-                    ll.append(0*sin_fn(inputs))
-                else:
-                    ll.append(((1-torch.cos(torch.Tensor([alpha-i])))/2)*cos_fn(inputs))
-                    ll.append(((1-torch.cos(torch.Tensor([alpha-i])))/2)*sin_fn(inputs))
-            return torch.cat(ll, -1)
+            return torch.cat([inputs, ll], -1)
 
-        
+        ratio = min(max((epoch - self.lower_bound) / (self.upper_bound - self.lower_bound), 0), 1)
+        alpha = ratio * self.L
 
+        weights = (1 - torch.cos(math.pi * torch.clip(alpha - range_L, 0., 1.))) / 2  # (L)
+        ll_view[:, :] *= weights[None, :, None, None]
 
+        return torch.cat([inputs, ll], -1)

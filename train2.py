@@ -25,6 +25,7 @@ def train_nerf(model, pos_encoder, dir_encoder,
     # poses = torch.tensor(poses, dtype=torch.float32, device=device)
     # train_poses = poses[:num_train]
     train_poses = torch.tensor(poses, dtype=torch.float32, device=device)[i_train]
+    print("train_poses.shape=", train_poses.shape)
     # add perturbations on the camera pose
 
     # train_poses_t = train_poses[:,:3,3].clone()
