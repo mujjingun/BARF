@@ -40,8 +40,8 @@ def test_nerf(model, pos_encoder, dir_encoder,
 
     train_poses_inv = invert(train_poses[:, :3, :])
     calc_poses = (train_poses_inv @
-                  pytorch3d.transforms.se3_exp_map(pose_noise).mT @
-                  pytorch3d.transforms.se3_exp_map(pose_perturbs).mT)
+                  pytorch3d.transforms.se3_exp_map(pose_noise).transpose(-1,-2) @
+                  pytorch3d.transforms.se3_exp_map(pose_perturbs).transpose(-1,-2))
     truth_mu, perturbs_mu, truth_scale, perturbs_scale, rotation = get_align(train_poses_inv, calc_poses)
     pose_distance(train_poses_inv, calc_poses)
 
