@@ -36,11 +36,15 @@ def train_nerf(model, pos_encoder, dir_encoder,
         mean=torch.zeros((train_poses.shape[0], 6)),
         std=torch.ones((train_poses.shape[0], 6)) * 0.15).to(device)
 
+    base_train_poses = (train_poses @
+                        pytorch3d.transforms.se3_exp_map(pose_noise).transpose(-2,-1))
+    if args.dataset_type == 'llff':
+        base_train_poses.fill_(0.0)
+
     pose_perturbs = torch.nn.Parameter(
         torch.zeros((train_poses.shape[0], 6), device=device)
     )
-    calc_poses = (train_poses @
-                  pytorch3d.transforms.se3_exp_map(pose_noise).transpose(-2,-1) @
+    calc_poses = (base_train_poses @
                   pytorch3d.transforms.se3_exp_map(pose_perturbs).transpose(-2,-1))
     pose_distance(train_poses, calc_poses)
 
@@ -77,8 +81,7 @@ def train_nerf(model, pos_encoder, dir_encoder,
         # print("(before step) pose perturb at train index is", pose_perturbs[train_idx])
 
         # c2w = poses[train_idx] @ to_matrix(pose_perturbs[train_idx])
-        c2w = (train_poses[train_idx] @
-               pytorch3d.transforms.se3_exp_map(pose_noise)[train_idx].transpose(-2,-1) @
+        c2w = (base_train_poses[train_idx] @
                pytorch3d.transforms.se3_exp_map(pose_perturbs)[train_idx].transpose(-2,-1))
         c2w = invert(c2w)
         c2w = c2w.type(torch.float32)
@@ -147,8 +150,7 @@ def train_nerf(model, pos_encoder, dir_encoder,
         # sanity check and save model
         if (step % 1000 == 0) and (step != 0):
             print(pose_grad)
-            calc_poses = (train_poses @
-                          pytorch3d.transforms.se3_exp_map(pose_noise).transpose(-2,-1) @
+            calc_poses = (base_train_poses @
                           pytorch3d.transforms.se3_exp_map(pose_perturbs).transpose(-2,-1))
             pose_distance(train_poses, calc_poses)
 
