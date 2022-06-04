@@ -88,5 +88,7 @@ def test_nerf(model, pos_encoder, dir_encoder,
         ssim_ = np.mean(np.stack(ssim_,0))
         lpips_ = np.mean(np.stack(lpips_,0))
 
+        print(f"psnr : {psnr_} | ssim : {ssim_} | lpips : {lpips_}")
+
         metrics = np.array([psnr_,ssim_,lpips_])
         np.save(f"{args.basedir}/metric.npy",metrics)
