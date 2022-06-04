@@ -61,7 +61,11 @@ def pose_distance(truth, perturbs):
     perturbs_origin = (origin @ invert(perturbs).transpose(-1, -2))[:,0]  # (N, 3)
 
     # perform procrustes analysis
-    truth_mu, perturbs_mu, truth_scale, perturbs_scale, rotation = procrustes_analysis(truth_origin, perturbs_origin)
+    try:
+        truth_mu, perturbs_mu, truth_scale, perturbs_scale, rotation = procrustes_analysis(truth_origin, perturbs_origin)
+    except np.linalg.LinAlgError:
+        print("SVD did not converge")
+        return
 
     # align the perturbed origin to ground truth
     aligned_origin = ((perturbs_origin - perturbs_mu) / perturbs_scale) @ rotation.T * truth_scale + truth_mu  # (N, 3)
