@@ -53,12 +53,8 @@ def expand(M):
 
 def get_distances(truth_origin_proc, perturbs_origin_proc, truth_origin, perturbs_origin, perturbs, truth):
     # perform procrustes analysis
-    try:
-        truth_mu, perturbs_mu, truth_scale, perturbs_scale, rotation = procrustes_analysis(
-            truth_origin_proc, perturbs_origin_proc)
-    except np.linalg.LinAlgError:
-        print("SVD did not converge")
-        return
+    truth_mu, perturbs_mu, truth_scale, perturbs_scale, rotation = procrustes_analysis(
+        truth_origin_proc, perturbs_origin_proc)
 
     # align the perturbed origin to ground truth
     aligned_origin = ((perturbs_origin - perturbs_mu) / perturbs_scale) @ rotation.T * truth_scale + truth_mu  # (N, 3)
@@ -86,19 +82,27 @@ def pose_distance(truth, perturbs):
     truth_origin = (origin @ invert(truth).transpose(-1, -2))[:,0]
     perturbs_origin = (origin @ invert(perturbs).transpose(-1, -2))[:,0]  # (N, 3)
 
-    trans_dist, angle_dist = get_distances(
-        truth_origin, perturbs_origin,
-        truth_origin, perturbs_origin,
-        perturbs, truth)
+    try:
+        trans_dist, angle_dist = get_distances(
+            truth_origin, perturbs_origin,
+            truth_origin, perturbs_origin,
+            perturbs, truth)
+    except np.linalg.LinAlgError:
+        print("SVD did not converge")
+        return
 
     outlier = angle_dist > angle_dist.std()
     truth_origin_remove_outlier = truth_origin[~outlier]
     perturbs_origin_remove_outlier = perturbs_origin[~outlier]
 
-    trans_dist, angle_dist = get_distances(
-        truth_origin_remove_outlier, perturbs_origin_remove_outlier,
-        truth_origin, perturbs_origin,
-        perturbs, truth)
+    try:
+        trans_dist, angle_dist = get_distances(
+            truth_origin_remove_outlier, perturbs_origin_remove_outlier,
+            truth_origin, perturbs_origin,
+            perturbs, truth)
+    except np.linalg.LinAlgError:
+        print("SVD did not converge")
+        return
     trans_dist = trans_dist.mean()
     angle_dist = angle_dist.mean()
 

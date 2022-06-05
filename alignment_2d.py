@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 import argparse
 import matplotlib.pyplot as plt
-from skimage import io
+import imageio as io
 import pathlib
 from model import PosEncoding
 from tqdm import trange, tqdm
@@ -24,23 +24,40 @@ def gen_grid(h, H, W, M, crop_scale):
 
     grid = F.affine_grid(
         torch.eye(3, device=h.device)[None, :2],
-        [1, 3, H, W],
+        [1, 3, H, H],
         align_corners=False,
     ) * crop_scale
 
-    grid = torch.cat([grid, torch.ones(1, H, W, 1, device=h.device)], -1)  # [1, H, W, 3]
-    grid = torch.einsum('mdt,mhwd->mhwt', mat, grid.expand(M, -1, -1, -1))
+    grid = torch.cat([grid, torch.ones(1, H, H, 1, device=h.device)], -1)  # [1, H, W, 3]
+    grid = grid.expand(M, H, H, 3).contiguous()
+    grid[:, :, :, 1] *= W / H
+    grid = torch.einsum('mtd,mhwd->mhwt', mat, grid)
     grid = (grid / grid[..., -1:])[..., :-1]
     return grid
 
 
 # pick random patches
-def generate_patches(image, num_patches, noise_scale, crop_scale):
+def generate_patches(image, num_patches, noise_scale, trans_noise_scale, crop_scale, seed):
     H, W = image.shape[1:]
     M = num_patches
     image = image[None].expand(M, -1, -1, -1)
 
-    h = torch.randn(M, 8, device=image.device) * noise_scale
+    torch.random.manual_seed(seed)
+    h = torch.randn(M, 8, device=image.device)
+    h[:, :8] *= noise_scale
+
+    h[1, 0] += -trans_noise_scale
+    h[1, 1] += -trans_noise_scale
+
+    h[2, 0] += -trans_noise_scale
+    h[2, 1] += trans_noise_scale
+
+    h[3, 0] += trans_noise_scale
+    h[3, 1] += -trans_noise_scale
+
+    h[4, 0] += trans_noise_scale
+    h[4, 1] += trans_noise_scale
+
     h[0] = 0.0  # identity for the first patch
 
     grid = gen_grid(h, H, W, num_patches, crop_scale)
@@ -68,7 +85,8 @@ def visualize_corners(image, true_poses, crop_scale, num_patches, basedir, filen
         [+crop_scale, -crop_scale, 1.0],
         [-crop_scale, -crop_scale, 1.0],
     ], device=image.device)
-    corners = torch.einsum('ndt,kd->nkt', mat, corners)
+    corners[:, 1] *= W / H
+    corners = torch.einsum('ntd,kd->nkt', mat, corners)
     corners = (corners / corners[:, :, -1:])[..., :-1]
     corners[..., 0] = (corners[..., 0] + 1.0) * 0.5 * W
     corners[..., 1] = (corners[..., 1] + 1.0) * 0.5 * H
@@ -98,7 +116,7 @@ class Model(torch.nn.Module):
     def forward(self, x, step):
         # x: [batch_size, 2]
         # output: color [batch_size, 3]
-        x = self.pos_enc.encode(x, step)
+        x = self.pos_enc.encode(x * 0.5, step)
         for feat in self.features[:-1]:
             x = feat(x)
             x = F.softplus(x)
@@ -121,18 +139,15 @@ def visualize_f(model, device, H, W, step, basedir, filename='image.png'):
 
 def train(args, image, patches, true_poses, basedir):
     # patches: (M, 3, H, W)
-    # true_poses: (M, 8)
+    # true_poses: (M, 10 (sl3 + trans))
     poses = torch.nn.Parameter(torch.zeros(args.num_patches - 1, 8, device=image.device))
-    model = Model(PosEncoding(2, 8, 0, 2000)).to(image.device)
+
+    start, end = 0, 2000
+    if args.without:
+        start, end = 2000, 2001
+    model = Model(PosEncoding(2, 8, start, end)).to(image.device)
     H, W = patches.shape[2:]
     M = len(patches)
-
-    if (basedir / 'ckpt_4999.pth').exists():
-        ckpt = torch.load(basedir / 'ckpt_4999.pth', map_location=image.device)
-        model.load_state_dict(ckpt['state_dict'])
-        poses.data.copy_(ckpt['poses'])
-        visualize_f(model, image.device, H, W, 4999, basedir)
-        return
 
     opt = torch.optim.Adam(
         [*model.parameters(), poses],
@@ -147,7 +162,7 @@ def train(args, image, patches, true_poses, basedir):
         grid = gen_grid(poses_fixed, H, W, args.num_patches, args.crop_scale)  # (M, H, W, 2)
         grid = grid.reshape(-1, 2)  # (MHW, 2)
 
-        prediction = model(grid, step)  # (MHW, 3)
+        prediction = model(grid, -1 if args.full else step)  # (MHW, 3)
         prediction = prediction.reshape(M, H, W, 3)  # (M, H, W, 3)
         ground_truth = patches.permute(0, 2, 3, 1)  # (M, H, W, 3)
 
@@ -177,7 +192,11 @@ def main():
     parser.add_argument('--num_patches', type=int, default=5)
     parser.add_argument('--basedir', type=str, default='planar/')
     parser.add_argument('--noise_scale', type=float, default=0.1)
-    parser.add_argument('--crop_scale', type=float, default=0.4)
+    parser.add_argument('--trans_noise_scale', type=float, default=0.2)
+    parser.add_argument('--crop_scale', type=float, default=0.375)
+    parser.add_argument('--full', default=False, action='store_true')
+    parser.add_argument('--without', default=False, action='store_true')
+    parser.add_argument('--seed', default=1, type=int)
     args = parser.parse_args()
 
     basedir = pathlib.Path(args.basedir)
@@ -187,7 +206,7 @@ def main():
     image = image.permute(2, 0, 1)
     image = image.cuda()
 
-    patches, true_poses = generate_patches(image, args.num_patches, args.noise_scale, args.crop_scale)
+    patches, true_poses = generate_patches(image, args.num_patches, args.noise_scale, args.trans_noise_scale, args.crop_scale, args.seed)
 
     visualize_patches(patches, args.num_patches, basedir)
     visualize_corners(image, true_poses, args.crop_scale, args.num_patches, basedir)
