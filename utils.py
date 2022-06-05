@@ -51,18 +51,11 @@ def expand(M):
     ], dim=1)
 
 
-@torch.no_grad()
-def pose_distance(truth, perturbs):
-    # obtain camera positions
-    # truth, perturbs = invert(truth), invert(perturbs)  # (N, 3, 4)
-
-    origin = torch.tensor([[[0., 0., 0., 1.]]], device=truth.device)
-    truth_origin = (origin @ invert(truth).transpose(-1, -2))[:,0]
-    perturbs_origin = (origin @ invert(perturbs).transpose(-1, -2))[:,0]  # (N, 3)
-
+def get_distances(truth_origin_proc, perturbs_origin_proc, truth_origin, perturbs_origin, perturbs, truth):
     # perform procrustes analysis
     try:
-        truth_mu, perturbs_mu, truth_scale, perturbs_scale, rotation = procrustes_analysis(truth_origin, perturbs_origin)
+        truth_mu, perturbs_mu, truth_scale, perturbs_scale, rotation = procrustes_analysis(
+            truth_origin_proc, perturbs_origin_proc)
     except np.linalg.LinAlgError:
         print("SVD did not converge")
         return
@@ -73,14 +66,41 @@ def pose_distance(truth, perturbs):
     t_aligned = (-R_aligned @ aligned_origin[...,None])[...,0]
     aligned_mat = to_matrix(R_aligned, t_aligned)
 
-    trans_dist = (truth_origin - aligned_origin).norm(dim=-1).mean()
+    trans_dist = (truth_origin - aligned_origin).norm(dim=-1)
 
     direc = torch.tensor([[[0., 0., 1., 0.]]], device=truth.device)
     truth_direc = (direc @ invert(truth).transpose(-1, -2))[:, 0]
     aligned_direc = (direc @ invert(aligned_mat).transpose(-1, -2))[:, 0]  # (N, 3)
 
     angle_dist = torch.rad2deg(torch.acos(F.cosine_similarity(truth_direc.double(), aligned_direc.double())))
-    angle_dist = angle_dist.mean(0)
+
+    return trans_dist, angle_dist
+
+
+@torch.no_grad()
+def pose_distance(truth, perturbs):
+    # obtain camera positions
+    # truth, perturbs = invert(truth), invert(perturbs)  # (N, 3, 4)
+
+    origin = torch.tensor([[[0., 0., 0., 1.]]], device=truth.device)
+    truth_origin = (origin @ invert(truth).transpose(-1, -2))[:,0]
+    perturbs_origin = (origin @ invert(perturbs).transpose(-1, -2))[:,0]  # (N, 3)
+
+    trans_dist, angle_dist = get_distances(
+        truth_origin, perturbs_origin,
+        truth_origin, perturbs_origin,
+        perturbs, truth)
+
+    outlier = angle_dist > angle_dist.std()
+    truth_origin_remove_outlier = truth_origin[~outlier]
+    perturbs_origin_remove_outlier = perturbs_origin[~outlier]
+
+    trans_dist, angle_dist = get_distances(
+        truth_origin_remove_outlier, perturbs_origin_remove_outlier,
+        truth_origin, perturbs_origin,
+        perturbs, truth)
+    trans_dist = trans_dist.mean()
+    angle_dist = angle_dist.mean()
 
     print(f"pose error: trans = {trans_dist.item():.4f} / "
           f"angle = {angle_dist.item():.4f}")

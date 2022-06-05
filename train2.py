@@ -34,7 +34,8 @@ def train_nerf(model, pos_encoder, dir_encoder,
     # train_poses[:,:3,3] = train_poses_zeros
     train_poses = invert(train_poses[:, :3, :])
 
-    pose_noise = torch.normal(mean=torch.zeros((train_poses.shape[0], 6)),std=torch.ones((train_poses.shape[0], 6)) * 0.15).to(device)
+    pose_noise = torch.normal(mean=torch.zeros((train_poses.shape[0], 6)),
+                              std=torch.ones((train_poses.shape[0], 6)) * 0.15).to(device)
     # pose_noise = torch.normal(mean=0,std=0.15, size=(train_poses.shape[0],6)).to(device)
 
     base_train_poses = (train_poses @

@@ -18,14 +18,20 @@ calc_psnr = lambda mse: -10 * torch.log10(mse)
 def get_align(truth, perturbs):
 
     # obtain camera positions
-    truth, perturbs = invert(truth), invert(perturbs)  # (N, 3, 4)
+    origin = torch.tensor([[[0., 0., 0., 1.]]], device=truth.device)
+    truth_origin = (origin @ invert(truth).transpose(-1, -2))[:,0]
+    perturbs_origin = (origin @ invert(perturbs).transpose(-1, -2))[:,0]  # (N, 3)
 
-    origin = torch.tensor([[0., 0., 0., 1.]], device=truth.device).unsqueeze(-1)
-    truth_origin = (truth @ origin).squeeze(2)
-    perturbs_origin = (perturbs @ origin).squeeze(2)  # (N, 3)
+    trans_dist, angle_dist = get_distances(
+        truth_origin, perturbs_origin,
+        truth_origin, perturbs_origin,
+        perturbs, truth)
 
-    # perform procrustes analysis
-    return procrustes_analysis(truth_origin, perturbs_origin)
+    outlier = angle_dist > angle_dist.std()
+    truth_origin_remove_outlier = truth_origin[~outlier]
+    perturbs_origin_remove_outlier = perturbs_origin[~outlier]
+
+    return procrustes_analysis(truth_origin_remove_outlier, perturbs_origin_remove_outlier)
 
 
 @torch.no_grad()
