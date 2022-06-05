@@ -83,14 +83,15 @@ def train_nerf(model, pos_encoder, dir_encoder,
         optimizer_f.zero_grad()
         optimizer_p.zero_grad()
 
-        train_idx = np.random.choice(i_train, 1)
+        train_idx = np.random.choice(np.arange(len(i_train)), 1)
+        all_idx = i_train[train_idx]
 
         # print("="*100)
         # print("train index is", train_idx)
         # print("(before step) pose perturb at 0 is", pose_perturbs[0])
         # sample points on ray
 
-        train_im = images[train_idx]  # H x W x 3
+        train_im = images[all_idx]  # H x W x 3
 
         # print("(before step) pose perturb at train index is", pose_perturbs[train_idx])
 

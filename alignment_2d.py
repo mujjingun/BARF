@@ -46,16 +46,16 @@ def generate_patches(image, num_patches, noise_scale, trans_noise_scale, crop_sc
     h = torch.randn(M, 8, device=image.device)
     h[:, :8] *= noise_scale
 
-    h[1, 0] += -trans_noise_scale
+    h[1, 0] += -trans_noise_scale * H/W
     h[1, 1] += -trans_noise_scale
 
-    h[2, 0] += -trans_noise_scale
+    h[2, 0] += -trans_noise_scale * H/W
     h[2, 1] += trans_noise_scale
 
-    h[3, 0] += trans_noise_scale
+    h[3, 0] += trans_noise_scale * H/W
     h[3, 1] += -trans_noise_scale
 
-    h[4, 0] += trans_noise_scale
+    h[4, 0] += trans_noise_scale * H/W
     h[4, 1] += trans_noise_scale
 
     h[0] = 0.0  # identity for the first patch
@@ -116,7 +116,7 @@ class Model(torch.nn.Module):
     def forward(self, x, step):
         # x: [batch_size, 2]
         # output: color [batch_size, 3]
-        x = self.pos_enc.encode(x * 0.5, step)
+        x = self.pos_enc.encode(x, step)
         for feat in self.features[:-1]:
             x = feat(x)
             x = F.softplus(x)
