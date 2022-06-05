@@ -188,6 +188,8 @@ def train_nerf(model, pos_encoder, dir_encoder,
             total_pixel = hwf[0] * hwf[1]
             batch_size = 8000 // 8
             iter = total_pixel // batch_size
+            if total_pixel % batch_size != 0:
+                iter = iter + 1
             with torch.no_grad():
                 for j in trange(iter):
                     batch_points, batch_directions, batch_lin = sample_points(
