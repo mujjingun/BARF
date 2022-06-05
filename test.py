@@ -27,7 +27,7 @@ def get_align(truth, perturbs):
         truth_origin, perturbs_origin,
         perturbs, truth)
 
-    outlier = angle_dist > angle_dist.std() * 3
+    outlier = (angle_dist - angle_dist.mean()).abs() > angle_dist.std() * 3
     print(f"Num outliers = {outlier.sum()}")
     truth_origin_remove_outlier = truth_origin[~outlier]
     perturbs_origin_remove_outlier = perturbs_origin[~outlier]

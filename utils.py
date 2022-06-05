@@ -91,8 +91,9 @@ def pose_distance(truth, perturbs):
         print("SVD did not converge")
         return
 
-    outlier = angle_dist > angle_dist.std() * 3
-    print(f"Num outliers = {outlier.sum()}")
+    outlier = (angle_dist - angle_dist.mean()).abs() > angle_dist.std() * 3
+    print(angle_dist)
+    print(f"Num outliers = {outlier.sum()} / {angle_dist.shape[0]}")
     truth_origin_remove_outlier = truth_origin[~outlier]
     perturbs_origin_remove_outlier = perturbs_origin[~outlier]
 
