@@ -40,6 +40,7 @@ def main():
     parser.add_argument('--model_path', type=str, default=None)
     parser.add_argument('--test', default=False, action='store_true')
     parser.add_argument('--auto_load', default=False, action='store_true')
+    parser.add_argument('--reverse_order', default=False, action='store_true')
 
     args = parser.parse_args()
 
