@@ -46,8 +46,15 @@ def test_nerf(model, pos_encoder, dir_encoder,
     test_poses = torch.tensor(poses, dtype=torch.float32, device=device)[i_test]
 
     train_poses_inv = invert(train_poses[:, :3, :])
-    calc_poses = (train_poses_inv @
-                  pytorch3d.transforms.se3_exp_map(pose_noise).transpose(-1,-2) @
+    base_train_poses = (train_poses_inv @
+                        pytorch3d.transforms.se3_exp_map(pose_noise).transpose(-2, -1))
+    if args.dataset_type == 'llff':
+        base_train_poses.fill_(0.0)
+        base_train_poses[...,0,0] = 1.0
+        base_train_poses[...,1,1] = 1.0
+        base_train_poses[...,2,2] = 1.0
+        print(base_train_poses[0])
+    calc_poses = (base_train_poses @
                   pytorch3d.transforms.se3_exp_map(pose_perturbs).transpose(-1,-2))
     truth_mu, perturbs_mu, truth_scale, perturbs_scale, rotation = get_align(train_poses_inv, calc_poses)
     pose_distance(train_poses_inv, calc_poses)
@@ -60,17 +67,19 @@ def test_nerf(model, pos_encoder, dir_encoder,
     R_aligned = test_poses_inv[..., :3] @ rotation
     t_aligned = (-R_aligned @ aligned_origin[..., None])[..., 0]
     test_poses_inv = to_matrix(R_aligned, t_aligned)
-    test_poses = expand(invert(test_poses_inv))
+    test_poses = invert(test_poses_inv)
 
     psnr_ = []
     ssim_ = []
     lpips_ = []
     calc_lpips = LPIPS(net='alex').to(device)
-    for idx in i_test:
+    for ii in range(len(i_test)):
+        idx = i_test[ii]
         test_im = images[idx]
         gt_flatten = torch.from_numpy(test_im.reshape(-1, 3)).to(device)
 
-        c2w = test_poses[idx - i_test[0]]
+        c2w = test_poses[ii]
+        #c2w = train_poses[ii]
         c2w = c2w.type(torch.float32)
 
         world_o, world_d = get_rays(hwf, c2w)
@@ -83,7 +92,8 @@ def test_nerf(model, pos_encoder, dir_encoder,
         total_pixel = hwf[0] * hwf[1]
         batch_size = 8000 // max(1, (args.num_points // 256))
         iter = total_pixel // batch_size
-
+        if total_pixel % batch_size != 0:
+            iter = iter + 1
         for j in trange(iter):
             batch_points, batch_directions, batch_lin = sample_points(
                 world_o, selected_d[batch_size * j:batch_size * (j + 1)], args.num_points, device

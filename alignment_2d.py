@@ -126,10 +126,10 @@ class Model(torch.nn.Module):
 
 
 @torch.no_grad()
-def visualize_f(model, device, H, W, step, basedir, filename='image.png'):
+def visualize_f(args, model, device, H, W, step, basedir, filename='image.png'):
     grid = gen_grid(torch.zeros(1, 8, device=device), H, W, 1, 1.0)
     grid = grid.reshape(-1, 2)
-    pixels = model(grid, step)
+    pixels = model(grid, -1 if args.full else step)
     pixels = pixels.reshape(H, W, 3)
 
     plt.figure(figsize=(5, 5), dpi=200)
@@ -137,15 +137,11 @@ def visualize_f(model, device, H, W, step, basedir, filename='image.png'):
     plt.savefig(basedir / filename, bbox_inches='tight')
 
 
-def train(args, image, patches, true_poses, basedir):
+def train(args, model, image, patches, true_poses, basedir):
     # patches: (M, 3, H, W)
     # true_poses: (M, 10 (sl3 + trans))
     poses = torch.nn.Parameter(torch.zeros(args.num_patches - 1, 8, device=image.device))
 
-    start, end = 0, 2000
-    if args.without:
-        start, end = 2000, 2001
-    model = Model(PosEncoding(2, 8, start, end)).to(image.device)
     H, W = patches.shape[2:]
     M = len(patches)
 
@@ -174,7 +170,7 @@ def train(args, image, patches, true_poses, basedir):
 
         if (step + 1) % 100 == 0:
             visualize_corners(image, poses_fixed.data, args.crop_scale, M, basedir, f"warps_{step}.png")
-            visualize_f(model, image.device, H, W, step, basedir, f"image_{step}.png")
+            visualize_f(args, model, image.device, H, W, step, basedir, f"image_{step}.png")
 
         if (step + 1) % 100 == 0:
             torch.save({
@@ -184,6 +180,28 @@ def train(args, image, patches, true_poses, basedir):
             }, basedir / f"ckpt_{step}.pth")
 
     return poses, model
+
+
+@torch.no_grad()
+def test(args, model, ckpt, image, patches, true_poses, basedir):
+    H, W = patches.shape[2:]
+    h = ckpt['poses'].cuda()
+    h = torch.cat([torch.zeros(1, 8, device=h.device), h], 0)
+    grid = gen_grid(h, H, W, args.num_patches, args.crop_scale)
+    grid = grid.reshape(-1, 2)  # (MHW, 2)
+    pixels = model(grid, -1 if args.full else 4999)
+    pixels = pixels.reshape(args.num_patches, H, W, 3)
+
+    plt.figure(figsize=(args.num_patches, 1), dpi=300)
+    for i in range(args.num_patches):
+        plt.subplot(1, args.num_patches, i + 1)
+        plt.imshow(pixels[i].cpu())
+        plt.axis('off')
+    plt.savefig(basedir / "patches_pred.png", bbox_inches='tight')
+
+    mse = torch.mean((pixels - patches.permute(0, 2, 3, 1)) ** 2)
+    psnr = -10 * torch.log10(mse)
+    print(psnr.item())
 
 
 def main():
@@ -197,6 +215,7 @@ def main():
     parser.add_argument('--full', default=False, action='store_true')
     parser.add_argument('--without', default=False, action='store_true')
     parser.add_argument('--seed', default=1, type=int)
+    parser.add_argument('--test', default=False, action='store_true')
     args = parser.parse_args()
 
     basedir = pathlib.Path(args.basedir)
@@ -211,7 +230,17 @@ def main():
     visualize_patches(patches, args.num_patches, basedir)
     visualize_corners(image, true_poses, args.crop_scale, args.num_patches, basedir)
 
-    train(args, image, patches, true_poses, basedir)
+    start, end = 0, 2000
+    if args.without:
+        start, end = 2000, 2001
+    model = Model(PosEncoding(2, 8, start, end)).to(image.device)
+
+    if not args.test:
+        train(args, model, image, patches, true_poses, basedir)
+    else:
+        ckpt = torch.load(basedir / "ckpt_4999.pth", map_location='cpu')
+        model.load_state_dict(ckpt['state_dict'])
+        test(args, model, ckpt, image, patches, true_poses, basedir)
 
 
 if __name__ == "__main__":
